@@ -1,0 +1,19 @@
+rules_version = '2';
+service cloud.firestore {
+ match /databases/{database}/documents {
+  function signedIn() { return request.auth != null; }
+  function self(uid) { return signedIn() && request.auth.uid == uid; }
+  match /spaces/{spaceId} { allow read: if resource.data.active == true; allow write: if false; }
+  match /bookings/{bookingId} { allow read: if signedIn() && (resource.data.userId == request.auth.uid || (request.auth.token.host == true && resource.data.hostId == request.auth.uid)); allow write: if false; }
+  match /holds/{holdId} { allow read: if signedIn() && resource.data.userId == request.auth.uid; allow write: if false; }
+  match /reviews/{reviewId} { allow read: if true; allow write: if false; }
+  match /users/{uid} {
+   allow read: if self(uid);
+   allow create: if self(uid) && request.resource.data.keys().hasOnly(['nickname','termsAccepted','termsVersion','privacyVersion']) && request.resource.data.nickname is string && request.resource.data.nickname.size() >= 2 && request.resource.data.nickname.size() <= 20 && request.resource.data.termsAccepted == true && request.resource.data.termsVersion == '1.0' && request.resource.data.privacyVersion == '1.0';
+   allow update: if self(uid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname']) && request.resource.data.nickname is string && request.resource.data.nickname.size() >= 2 && request.resource.data.nickname.size() <= 20;
+   match /favorites/{spaceId} { allow read,delete: if self(uid); allow create,update: if self(uid) && request.resource.data.keys().hasOnly(['spaceId']) && request.resource.data.spaceId == spaceId; }
+   match /notifications/{notificationId} { allow read: if self(uid); allow update: if self(uid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']) && request.resource.data.read is bool; }
+  }
+  match /{document=**} { allow read,write: if false; }
+ }
+}

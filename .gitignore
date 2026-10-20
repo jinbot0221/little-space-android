@@ -1,0 +1,10 @@
+*.iml
+.gradle/
+local.properties
+**/build/
+node_modules/
+.firebase/
+*-debug.log
+app/google-services.json
+.env*
+!.env.example
