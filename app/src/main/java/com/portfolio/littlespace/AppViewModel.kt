@@ -9,7 +9,10 @@ import java.time.LocalDate
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
-class AppViewModel(app: Application) : AndroidViewModel(app) {
+class AppViewModel
+@JvmOverloads
+constructor(app: Application, private val screenshotSpaces: List<Space>? = null) :
+    AndroidViewModel(app) {
     private val repo = FirebaseRepository(app)
     var route by mutableStateOf("탐색")
         private set
@@ -153,7 +156,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun refresh() = run {
-        spaces = repo.spaces()
+        spaces = screenshotSpaces ?: repo.spaces()
         if (email != null) {
             favorites = repo.favorites()
             host = repo.auth.currentUser?.getIdToken(false)?.awaitTokenHost() ?: false
@@ -164,7 +167,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         selected = space
         reviews = emptyList()
         go("공간 상세")
-        run { reviews = repo.reviews(space.id) }
+        if (screenshotSpaces == null) run { reviews = repo.reviews(space.id) }
     }
 
     fun filtered() =

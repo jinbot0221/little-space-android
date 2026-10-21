@@ -8,3 +8,7 @@ node_modules/
 app/google-services.json
 .env*
 !.env.example
+
+# Screenshot capture helper
+__pycache__/
+*.pyc

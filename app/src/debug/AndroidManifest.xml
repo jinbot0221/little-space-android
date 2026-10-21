@@ -1,1 +1,1 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application android:usesCleartextTraffic="true" /></manifest>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"><application android:usesCleartextTraffic="true"><activity android:name=".ScreenshotActivity" android:exported="true" android:label="틈곳 화면 촬영" /></application></manifest>

@@ -4,6 +4,16 @@
 
 프로젝트 이름은 `com.포트폴리오.littlespace`, Android applicationId / namespace는 `com.portfolio.littlespace`입니다. Android 앱 ID에 한글을 쓸 수 없으므로 프로젝트 이름과 앱 ID를 구분했습니다. 런처 이름은 **틈곳**입니다.
 
+## 앱 화면
+
+[전체 화면 스크린샷 14장 보기](docs/screenshots/README.md)
+
+| 탐색 | 공간 상세 | 예약 확인 |
+| --- | --- | --- |
+| <a href="docs/screenshots/01-home.png"><img src="docs/screenshots/01-home.png" alt="탐색" width="240"></a> | <a href="docs/screenshots/03-detail.png"><img src="docs/screenshots/03-detail.png" alt="공간 상세" width="240"></a> | <a href="docs/screenshots/11-confirm.png"><img src="docs/screenshots/11-confirm.png" alt="예약 확인" width="240"></a> |
+
+Android 에뮬레이터에서 촬영한 원본 PNG입니다. debug 전용 가상 데이터를 사용했으며 사진은 네트워크 실패 시 대체 상태입니다. 실제 Firebase 거래 검증 화면은 아닙니다.
+
 ## 구성
 
 - Android: Kotlin 2.1.20, Jetpack Compose / Material 3, ViewModel, Repository, Coil
