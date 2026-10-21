@@ -12,3 +12,5 @@ app/google-services.json
 # Screenshot capture helper
 __pycache__/
 *.pyc
+
+.kotlin/

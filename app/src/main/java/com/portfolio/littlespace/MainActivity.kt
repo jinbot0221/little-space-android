@@ -757,7 +757,7 @@ fun MyPage(vm: AppViewModel) {
         }
         TextButton(onClick = { vm.logout() }, enabled = !vm.loading) { Text("로그아웃") }
         Text(
-            "소셜 로그인 · FCM 푸시는 프로젝트 및 공급자 등록 후 연동 예정입니다. 현재는 이메일 인증과 앱 알림함을 제공합니다.",
+            "현재 이메일 로그인과 앱 알림함을 제공합니다. 자동 푸시와 사진 업로드는 제공하지 않습니다.",
             fontSize = 12.sp,
             color = Muted,
         )

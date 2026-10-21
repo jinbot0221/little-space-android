@@ -1,103 +1,113 @@
-# 틈곳 · Little Space
+# 틈곳 · Little Space — Firebase Spark
 
-시간이 필요한 만큼 공간을 찾고 예약하는 Android 포트폴리오 앱입니다. 제공된 **틈곳 기획서·화면정의서**를 기준으로 첫 번째 예약 MVP를 구현했습니다. 실제 공간 대여·과금은 하지 않습니다.
+필요한 시간만큼 공간을 찾고 예약하는 Android 포트폴리오 앱입니다. **Firebase Spark(무료) 기준으로 Auth + Cloud Firestore만 사용**합니다. Cloud Functions·Cloud Run·Cloud Storage·실제 결제 서버는 배포하지 않습니다.
 
-프로젝트 이름은 `com.포트폴리오.littlespace`, Android applicationId / namespace는 `com.portfolio.littlespace`입니다. Android 앱 ID에 한글을 쓸 수 없으므로 프로젝트 이름과 앱 ID를 구분했습니다. 런처 이름은 **틈곳**입니다.
+프로젝트명 `com.포트폴리오.littlespace` · 앱 ID `com.portfolio.littlespace` · 표시 이름 **틈곳** · Android API 26 이상.
 
 ## 앱 화면
 
-[전체 화면 스크린샷 14장 보기](docs/screenshots/README.md)
+[전체 화면 스크린샷 14장](docs/screenshots/README.md) — 기존 0.1 버전의 debug 가상 데이터 촬영입니다. Spark 전환은 데이터 처리 구조를 바꾸며 화면의 주요 흐름은 유지합니다.
 
 | 탐색 | 공간 상세 | 예약 확인 |
 | --- | --- | --- |
 | <a href="docs/screenshots/01-home.png"><img src="docs/screenshots/01-home.png" alt="탐색" width="240"></a> | <a href="docs/screenshots/03-detail.png"><img src="docs/screenshots/03-detail.png" alt="공간 상세" width="240"></a> | <a href="docs/screenshots/11-confirm.png"><img src="docs/screenshots/11-confirm.png" alt="예약 확인" width="240"></a> |
 
-Android 에뮬레이터에서 촬영한 원본 PNG입니다. debug 전용 가상 데이터를 사용했으며 사진은 네트워크 실패 시 대체 상태입니다. 실제 Firebase 거래 검증 화면은 아닙니다.
+## Spark에서 제공하는 기능
 
-## 구성
+- 비회원 탐색·검색·시설·후기 조회, 사진 URL 및 실패 대체 이미지
+- 이메일 가입·로그인·재설정 메일, 필수 동의, 찜과 개인 내역
+- **5분 선점, 30분 단위 1~8시간 예약, 정원·운영 시간·30분 고정단가 검사**
+- Firestore 트랜잭션과 보안 규칙에 의한 중복 예약 방지·요청 결과 복구
+- 서버 `request.time` 기준 선점 만료와 이용 24시간 전까지 취소
+- 완료 예약당 후기 1회, 확정·취소 앱 알림함
+- 소유 운영자의 예약 조회와 시간 차단·해제 (Admin custom claim 필요)
 
-- Android: Kotlin 2.1.20, Jetpack Compose / Material 3, ViewModel, Repository, Coil
-- 서버: Firebase Auth, Cloud Firestore, Node.js 22 Cloud Functions v2 (서울 리전)
-- Android API 26 이상, compile / target SDK 35, Gradle Wrapper 8.11.1
-- 기본 연결은 `demo-teumgot` Firebase Emulator입니다. Firebase 유료 프로젝트나 키 없이 빌드할 수 있습니다.
+**제공하지 않는 기능:** 실제 과금·환불, 자동 FCM 발송·예약 알림·발송 워커, 사진 업로드/Cloud Storage, 휴대폰 SMS 인증, 외부 PG·카카오 custom-token 서버, 지도, 소셜 로그인. FCM 자체가 유료라서 제외한 것은 아닙니다. 자동 발송에 필요한 신뢰할 수 있는 서버를 이번 Spark 버전에서 운영하지 않습니다. 공간 사진은 외부 URL을 관리자가 등록합니다.
+
+시간대별 변동 가격은 **30분 고정단가**로 단순화했습니다. 운영 가능한 날짜 재고는 관리자가 미리 등록합니다. 스케줄러 없이 종료 예약은 조회 시 완료로 표시하고, 만료된 선점은 정리 작업 없이 재사용합니다.
+
+## 구조
+
+Kotlin 2.1.20 · Jetpack Compose / Material 3 · ViewModel / Repository · Firebase Android SDK · Gradle 8.11.1 · JDK 21 · SDK 35.
 
 ```mermaid
 flowchart LR
-    UI[Compose 화면] --> VM[AppViewModel]
-    VM --> R[FirebaseRepository]
-    R --> A[Firebase Auth]
-    R --> DB[Firestore 공개 공간 / 개인 찜 / 알림]
-    R --> CF[Callable Cloud Functions]
-    CF --> T[Firestore 트랜잭션]
-    T --> I[공간별 일자별 슬롯 재고]
-    T --> B[선점 / 예약 / 요청 결과 / 알림함 / outbox]
+  UI[Compose] --> VM[ViewModel]
+  VM --> REPO[FirebaseRepository / SparkStore]
+  REPO --> AUTH[Firebase Auth]
+  REPO --> TX[Firestore SDK transaction]
+  TX --> RULES[Security Rules: request.time / getAfter]
+  RULES --> INV[날짜별 48슬롯 재고]
+  RULES --> DATA[선점 / 예약 / 알림함]
 ```
 
-## 실행
+앱의 검사는 안내용입니다. 앱을 변조해도 **배포된 보안 규칙**이 가격·정원·시간·권한·슬롯 변경을 검사합니다. 이전처럼 관리자 SDK가 모든 거래를 처리하는 서버는 없습니다. `firebase/`는 로컬 테스트·관리 도구이며 Cloud Functions 소스가 아닙니다.
 
-### Android Studio
+## 로컬 실행
 
-1. 이 저장소를 Android Studio에서 엽니다. JDK 21, Android SDK 35와 Build Tools 35.0.0을 설치합니다.
-2. 로컬 터미널에서 Node.js 22와 Java를 준비하고 아래 서버 명령을 실행합니다.
-3. Android Emulator에서 `app`을 실행합니다. 서버 주소는 기본 `10.0.2.2`입니다.
+Android Studio에서 저장소를 열고 JDK 21, SDK 35 / Build Tools 35.0.0을 준비합니다. 별도 터미널에서 Node.js 22를 사용합니다.
 
 ```bash
-cd functions
-npm ci
-npm test
-cd ..
+npm --prefix firebase ci
 ./scripts/start-emulators.sh
 ```
 
-별도 터미널에서 시드 데이터를 넣습니다. 명시한 두 변수가 있어야만 동작하며 실제 Firebase 프로젝트에는 실행할 수 없습니다.
+다른 터미널에서 시드합니다. 이 명령은 **Auth·Firestore 두 에뮬레이터 변수 모두** 없으면 거절합니다. 기존 공간·재고·예약을 덮어쓰지 않으며 비어 있는 향후 30일만 생성합니다.
 
 ```bash
-cd functions
 FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 \
-FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 npm run seed
+FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 npm --prefix firebase run seed
 ```
 
-시드는 가상 공간 3곳과 **로컬 전용** 계정을 생성합니다. 재실행 시 해당 공간과 테스트 프로필을 갱신하며 예약 데이터를 지우지 않습니다.
-
-| 역할 | 이메일 | 로컬 테스트 비밀번호 |
+| 로컬 전용 계정 | 이메일 | 테스트 비밀번호 |
 | --- | --- | --- |
 | 고객 | `customer@teumgot.test` | `Teumgot123!` |
 | 소유 운영자 | `host@teumgot.test` | `Teumgot123!` |
 
-앱 회원가입으로 새 고객 계정을 만들어도 됩니다. 운영 권한은 Admin SDK가 발급한 `host` custom claim과 공간의 `hostId`를 모두 확인합니다. 가입 화면으로 권한을 올릴 수 없습니다.
+앱을 Android Emulator에서 실행합니다. 기본 연결은 `demo-teumgot`, 호스트 `10.0.2.2`, Auth 9099 / Firestore 8080입니다. Functions용 5001 포트는 사용하지 않습니다. 실물 USB 기기는 두 포트를 `adb reverse`하고 `-PemulatorHost=127.0.0.1`로 빌드합니다.
 
-실물 Android 기기는 USB 연결 후 `adb reverse tcp:8080 tcp:8080`, `adb reverse tcp:9099 tcp:9099`, `adb reverse tcp:5001 tcp:5001`을 실행하고 `-PemulatorHost=127.0.0.1`로 빌드합니다. 에뮬레이터 포트는 개발용이며 외부에 공개하지 마세요.
-
-### 이 클라우드 환경
+### 클라우드 환경
 
 ```bash
 cd /workspace/little-space-android
 source scripts/cloud-env.sh
 ./gradlew :app:assembleDebug :app:lintDebug
-cd functions && npm test
 ```
 
-APK: `app/build/outputs/apk/debug/app-debug.apk`
+APK: `app/build/outputs/apk/debug/app-debug.apk`.
 
-현재 머신의 전체 JDK·Android SDK·Node 22는 `/workspace/toolchains`에 있고 Gradle / npm / Emulator 캐시는 `/workspace` 아래에 둡니다. 시스템 Java는 컴파일러가 없는 JRE이므로 위 초기화가 필요합니다. 프록시 TLS 인증은 시스템 CA 저장소로 검증하며 인증서 검사를 끄지 않습니다.
-
-### 통합 테스트
-
-다른 에뮬레이터 프로세스를 종료한 뒤 실행합니다.
+Firestore JAR 다운로드가 차단되는 환경에서는 Google 공식 Cloud SDK 배포본을 사용할 수 있습니다. 검증된 배포본을 그대로 실행하며 JAR·서명을 수정하지 않습니다.
 
 ```bash
+./scripts/install-firestore-emulator.sh
+./scripts/start-emulators.sh
+```
+
+## 검증
+
+```bash
+# 다른 에뮬레이터를 먼저 종료하세요. 이 테스트는 로컬 test DB를 초기화합니다.
 ./scripts/test-integration.sh
 ```
 
-Auth·Firestore·Functions를 실제 Firebase Emulator로 띄우고 시드 후 동시 선점, 중복 확정, 만료, 취소, Firestore 직접 쓰기 거절을 검사합니다. 네트워크에서 `storage.googleapis.com` 접근이 허용되어야 Emulator JAR를 처음 다운로드할 수 있습니다. 이 스크립트의 현재 실행 여부는 [검증 기록](docs/VALIDATION.md)에 별도로 기록합니다.
+실제 Firestore Emulator에 규칙을 올려 정상 거래와 공격 요청을 검증합니다. 기존 메모리 모형 테스트를 이 검증으로 대체했습니다. [검증 기록](docs/VALIDATION.md)에서 결과를 확인할 수 있습니다.
 
-## Firebase 실제 프로젝트 연결
+Android SDK 경로와 실제 Auth 연동까지 확인하는 테스트도 포함했습니다. 두 Firebase 에뮬레이터를 시작·시드한 뒤 Android 테스트 기기를 연결하고 실행합니다.
 
-아직 실제 Firebase 프로젝트에 배포하지 않았습니다. 프로젝트 ID를 제공받지 않아 로컬 데모 프로젝트만 구성했습니다.
+```bash
+./gradlew :app:connectedDebugAndroidTest
+```
 
-1. Firebase 프로젝트에 Android 앱 `com.portfolio.littlespace`를 등록합니다.
-2. Authentication에서 Email/Password를 켜고 Firestore를 만듭니다. Cloud Functions 배포에는 결제 플랜 등 프로젝트 조건을 확인합니다.
-3. 프로젝트의 공개 Android 설정을 **로컬** `~/.gradle/gradle.properties` 등에 넣습니다. 서비스 계정 키는 Android 앱에 넣지 않습니다.
+## 실제 Spark 프로젝트 연결
+
+1. Firebase 콘솔에서 **Spark** 프로젝트에 Android 앱 `com.portfolio.littlespace`를 등록합니다.
+2. Email/Password Auth와 Cloud Firestore를 활성화합니다. 신뢰할 수 있는 관리자 환경에서 **보안 규칙·인덱스만** 배포합니다.
+
+```bash
+firebase/node_modules/.bin/firebase deploy --project YOUR_PROJECT_ID --only firestore
+```
+
+3. 로컬 Gradle 속성(예: `~/.gradle/gradle.properties`)에 Android 공개 설정을 넣습니다. 서비스 계정 키는 앱·저장소·채팅에 넣지 않습니다.
 
 ```properties
 firebaseProjectId=YOUR_PROJECT_ID
@@ -106,28 +116,8 @@ firebaseApiKey=YOUR_ANDROID_PUBLIC_API_KEY
 useEmulators=false
 ```
 
-4. 승인된 관리자 환경에서 `firebase deploy --project YOUR_PROJECT_ID --only firestore,functions`를 실행합니다. 이 저장소는 자동 배포하지 않습니다.
-5. 운영 공간은 신뢰할 수 있는 Admin SDK 경로로 등록합니다. `functions/scripts/seed.js`는 실제 서버용 시드 도구가 아닙니다.
+4. 관리자가 공간과 운영일을 등록하고 운영자 계정에 custom claim을 지정합니다. [Spark 운영·전환 안내](docs/SPARK.md)를 따릅니다.
 
-`google-services.json` 자동 처리 대신 `FirebaseOptions`로 설정을 초기화합니다. Firebase Android API 키는 앱 식별용 공개 설정이며 서비스 계정 비밀 키와 다릅니다. 실제 사용 시 API 제한·Firebase 보안 규칙·App Check 등 배포 구성을 별도로 검토해야 합니다.
+실제 프로젝트 ID·설정이 제공되지 않아 라이브 배포는 하지 않았습니다. `google-services.json` 자동 처리 대신 `FirebaseOptions`를 사용합니다. 기존 Functions 버전의 데이터는 자동 변환하지 않습니다. 원본을 삭제하지 않고 새 `spark*` 컬렉션을 사용합니다.
 
-## 구현 범위
-
-| 문서 화면 / 기능 | 현재 구현 |
-| --- | --- |
-| SP-01~03 탐색·검색·상세 | 지역 직접 입력, 날짜·인원·유형·검색어 필터, 사진 대체 상태, 시설·규칙·후기 조회 |
-| SP-04~07 시간·선점·확정·취소 | 30분 슬롯, 1~8시간, 5분 선점, 서버 가격 합산, 테스트 결제 성공·실패·3초 응답 지연, 예약 상세·취소 |
-| SP-08~12 내역·찜·마이·알림·후기 | 예정·완료·취소 내역, 개인 찜, 로그아웃, 확정·취소 알림함, 완료 거래당 1회 후기 |
-| SP-13 / 16~18 / 20 이메일 인증·비회원 | 게스트 탐색, 로그인 안내 시트, 이메일 로그인·가입·필수 동의, 비밀번호 재설정 메일, 로그인 후 원래 경로 복귀 |
-| SP-14~15 운영 | 서버 소유권 및 custom claim 검사, 소유 공간 예약 조회, 시간 차단·해제 |
-| 요청 복구 | 같은 요청 키·본문은 같은 결과, 본문 변경 거절, 미확정 예약 키를 기기에 저장하고 재조회 |
-
-**아직 구현하지 않은 문서 항목:** Google Credential Manager·카카오·Apple 로그인 및 SP-21 소셜 가입, SP-19 앱 내부 새 비밀번호 화면(현재 Firebase 호스팅 재설정 흐름), FCM 전송·예약 알림·재시도 워커·기기 토큰 관리·SP-22 알림 설정, 지도 어댑터·길찾기, 전체 화면 스크롤 위치 복원, 목록 cursor 페이지네이션, Room 캐시, 시연 영상. 앱은 이 기능들이 동작하는 것으로 표시하지 않습니다. outbox는 확정·취소와 원자적으로 기록되지만 아직 소비하는 푸시 워커는 없습니다. 알림함은 FCM 없이 동작합니다.
-
-문서 전체를 완성한 버전이나 실제 운영 서비스가 아닌 **핵심 예약 MVP**입니다. 실기기 UI·접근성·공급자 인증 검수는 별도 수행해야 합니다.
-
-## 서버 계약
-
-[Firebase 설계](docs/FIREBASE.md) · [검증 기록](docs/VALIDATION.md)
-
-`functions/src/domain.js`는 시간·요금 규칙, `functions/src/index.js`는 인증·트랜잭션·idempotency를 담당합니다. 상태 변경은 클라이언트의 Firestore 직접 쓰기로 수행하지 않습니다. 앱 데이터 경로는 Compose → ViewModel → Repository → Firebase입니다.
+[Firebase 계약·보안 설계](docs/FIREBASE.md) · [Spark 한도·관리 절차](docs/SPARK.md) · [검증 기록](docs/VALIDATION.md)

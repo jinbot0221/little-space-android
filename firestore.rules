@@ -1,19 +1,192 @@
 rules_version = '2';
 service cloud.firestore {
- match /databases/{database}/documents {
-  function signedIn() { return request.auth != null; }
-  function self(uid) { return signedIn() && request.auth.uid == uid; }
-  match /spaces/{spaceId} { allow read: if resource.data.active == true; allow write: if false; }
-  match /bookings/{bookingId} { allow read: if signedIn() && (resource.data.userId == request.auth.uid || (request.auth.token.host == true && resource.data.hostId == request.auth.uid)); allow write: if false; }
-  match /holds/{holdId} { allow read: if signedIn() && resource.data.userId == request.auth.uid; allow write: if false; }
-  match /reviews/{reviewId} { allow read: if true; allow write: if false; }
-  match /users/{uid} {
-   allow read: if self(uid);
-   allow create: if self(uid) && request.resource.data.keys().hasOnly(['nickname','termsAccepted','termsVersion','privacyVersion']) && request.resource.data.nickname is string && request.resource.data.nickname.size() >= 2 && request.resource.data.nickname.size() <= 20 && request.resource.data.termsAccepted == true && request.resource.data.termsVersion == '1.0' && request.resource.data.privacyVersion == '1.0';
-   allow update: if self(uid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname']) && request.resource.data.nickname is string && request.resource.data.nickname.size() >= 2 && request.resource.data.nickname.size() <= 20;
-   match /favorites/{spaceId} { allow read,delete: if self(uid); allow create,update: if self(uid) && request.resource.data.keys().hasOnly(['spaceId']) && request.resource.data.spaceId == spaceId; }
-   match /notifications/{notificationId} { allow read: if self(uid); allow update: if self(uid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']) && request.resource.data.read is bool; }
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function self(uid) { return signedIn() && request.auth.uid == uid; }
+    function accepted() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.termsAccepted == true; }
+    function host(spaceId) { return signedIn() && request.auth.token.get('host', false) == true && get(/databases/$(database)/documents/spaces/$(spaceId)).data.hostId == request.auth.uid; }
+    function key(id) { return id is string && id.matches('[A-Za-z0-9-]{1,80}'); }
+    function invAfter(id) { return getAfter(/databases/$(database)/documents/sparkInventory/$(id)).data; }
+    function linked(invId, action, id, start, count) {
+      let d = invAfter(invId);
+      return d.updatedAt == request.time && d.lastAction == action && d.lastId == id && d.lastStartSlot == start && d.lastCount == count;
+    }
+    function contract(h) {
+      let s = get(/databases/$(database)/documents/spaces/$(h.spaceId)).data;
+      let d = get(/databases/$(database)/documents/sparkInventory/$(h.inventoryId)).data;
+      return s.active == true && s.schemaVersion == 2 && s.pricingMode == 'flat'
+        && h.spaceId == d.spaceId && h.date == d.date && d.schemaVersion == 2
+        && h.startSlot is int && h.slotCount is int && h.slotCount >= 2 && h.slotCount <= 16
+        && h.startSlot >= 0 && h.startSlot + h.slotCount <= 48
+        && h.startSlot * 30 >= s.openMinute && (h.startSlot + h.slotCount) * 30 <= s.closeMinute
+        && h.startAt == d.dayStart + duration.value(h.startSlot * 30, 'm')
+        && h.endAt == h.startAt + duration.value(h.slotCount * 30, 'm') && h.startAt > request.time
+        && h.people is int && h.people >= 1 && h.people <= s.capacity
+        && s.slotPrice is int && s.slotPrice >= 0 && h.slotPrice is int && h.amount is int && h.slotPrice == s.slotPrice && h.amount == s.slotPrice * h.slotCount
+        && h.spaceName == s.name && h.address == s.address && h.hostId == s.hostId;
+    }
+    function free(s) { return s.kind == 'free' || (s.kind == 'hold' && s.stamp + duration.value(5, 'm') <= request.time); }
+    // Exact changed-key set and unrolled local comparisons avoid both get() and expression limits.
+    function rangeKeys(start,count) { return count == 2 ? [string(start + 0), string(start + 1)] : count == 3 ? [string(start + 0), string(start + 1), string(start + 2)] : count == 4 ? [string(start + 0), string(start + 1), string(start + 2), string(start + 3)] : count == 5 ? [string(start + 0), string(start + 1), string(start + 2), string(start + 3), string(start + 4)] : count == 6 ? [string(start + 0), string(start + 1), string(start + 2), string(start + 3), string(start + 4), string(start + 5)] : count == 7 ? [string(start + 0), string(start + 1), string(start + 2), string(start + 3), string(start + 4), string(start + 5), string(start + 6)] : count == 8 ? [string(start + 0), string(start + 1), string(start + 2), string(start + 3), string(start + 4), string(start + 5), string(start + 6), string(start + 7)] : count == 9 ? [string(start + 0), string(start + 1), string(start + 2), string(start + 3), string(start + 4), string(start + 5), string(start + 6), string(start + 7), string(start + 8)] : count == 10 ? [string(start + 0), string(start + 1), string(start + 2), string(start + 3), string(start + 4), string(start + 5), string(start + 6), string(start + 7), string(start + 8), string(start + 9)] : count == 11 ? [string(start + 0), string(start + 1), string(start + 2), string(start + 3), string(start + 4), string(start + 5), string(start + 6), string(start + 7), string(start + 8), string(start + 9), string(start + 10)] : count == 12 ? [string(start + 0), string(start + 1), string(start + 2), string(start + 3), string(start + 4), string(start + 5), string(start + 6), string(start + 7), string(start + 8), string(start + 9), string(start + 10), string(start + 11)] : count == 13 ? [string(start + 0), string(start + 1), string(start + 2), string(start + 3), string(start + 4), string(start + 5), string(start + 6), string(start + 7), string(start + 8), string(start + 9), string(start + 10), string(start + 11), string(start + 12)] : count == 14 ? [string(start + 0), string(start + 1), string(start + 2), string(start + 3), string(start + 4), string(start + 5), string(start + 6), string(start + 7), string(start + 8), string(start + 9), string(start + 10), string(start + 11), string(start + 12), string(start + 13)] : count == 15 ? [string(start + 0), string(start + 1), string(start + 2), string(start + 3), string(start + 4), string(start + 5), string(start + 6), string(start + 7), string(start + 8), string(start + 9), string(start + 10), string(start + 11), string(start + 12), string(start + 13), string(start + 14)] : [string(start + 0), string(start + 1), string(start + 2), string(start + 3), string(start + 4), string(start + 5), string(start + 6), string(start + 7), string(start + 8), string(start + 9), string(start + 10), string(start + 11), string(start + 12), string(start + 13), string(start + 14), string(start + 15)]; }
+    function equalSlots(values,d,expected) {
+      let start=d.lastStartSlot;
+      let count=d.lastCount;
+      return (count <= 0 || values[string(start+0)] == expected) && (count <= 1 || values[string(start+1)] == expected) && (count <= 2 || values[string(start+2)] == expected) && (count <= 3 || values[string(start+3)] == expected) && (count <= 4 || values[string(start+4)] == expected) && (count <= 5 || values[string(start+5)] == expected) && (count <= 6 || values[string(start+6)] == expected) && (count <= 7 || values[string(start+7)] == expected) && (count <= 8 || values[string(start+8)] == expected) && (count <= 9 || values[string(start+9)] == expected) && (count <= 10 || values[string(start+10)] == expected) && (count <= 11 || values[string(start+11)] == expected) && (count <= 12 || values[string(start+12)] == expected) && (count <= 13 || values[string(start+13)] == expected) && (count <= 14 || values[string(start+14)] == expected) && (count <= 15 || values[string(start+15)] == expected);
+    }
+    function freeSlots(d) {
+      let start=d.lastStartSlot;
+      let count=d.lastCount;
+      let values=resource.data.slots;
+      return (count <= 0 || free(values[string(start+0)])) && (count <= 1 || free(values[string(start+1)])) && (count <= 2 || free(values[string(start+2)])) && (count <= 3 || free(values[string(start+3)])) && (count <= 4 || free(values[string(start+4)])) && (count <= 5 || free(values[string(start+5)])) && (count <= 6 || free(values[string(start+6)])) && (count <= 7 || free(values[string(start+7)])) && (count <= 8 || free(values[string(start+8)])) && (count <= 9 || free(values[string(start+9)])) && (count <= 10 || free(values[string(start+10)])) && (count <= 11 || free(values[string(start+11)])) && (count <= 12 || free(values[string(start+12)])) && (count <= 13 || free(values[string(start+13)])) && (count <= 14 || free(values[string(start+14)])) && (count <= 15 || free(values[string(start+15)]));
+    }
+    function releaseSlot(k,d,kind,id) {
+      let old=resource.data.slots[k];
+      return d.slots[k] == ((old.kind == kind && old.id == id) ? {'kind':'free'} : old);
+    }
+    function releaseSlots(d,kind,id) {
+      let start=d.lastStartSlot;
+      let count=d.lastCount;
+      return (count <= 0 || releaseSlot(string(start+0),d,kind,id)) && (count <= 1 || releaseSlot(string(start+1),d,kind,id)) && (count <= 2 || releaseSlot(string(start+2),d,kind,id)) && (count <= 3 || releaseSlot(string(start+3),d,kind,id)) && (count <= 4 || releaseSlot(string(start+4),d,kind,id)) && (count <= 5 || releaseSlot(string(start+5),d,kind,id)) && (count <= 6 || releaseSlot(string(start+6),d,kind,id)) && (count <= 7 || releaseSlot(string(start+7),d,kind,id)) && (count <= 8 || releaseSlot(string(start+8),d,kind,id)) && (count <= 9 || releaseSlot(string(start+9),d,kind,id)) && (count <= 10 || releaseSlot(string(start+10),d,kind,id)) && (count <= 11 || releaseSlot(string(start+11),d,kind,id)) && (count <= 12 || releaseSlot(string(start+12),d,kind,id)) && (count <= 13 || releaseSlot(string(start+13),d,kind,id)) && (count <= 14 || releaseSlot(string(start+14),d,kind,id)) && (count <= 15 || releaseSlot(string(start+15),d,kind,id));
+    }
+    function slots(d) {
+      let a=d.lastAction;
+      let old=resource.data.slots;
+      return d.slots is map && d.slots.keys().toSet() == old.keys().toSet()
+        && d.slots.diff(old).affectedKeys().hasOnly(rangeKeys(d.lastStartSlot,d.lastCount))
+        && (a == 'hold' ? freeSlots(d) && equalSlots(d.slots,d,{'kind':'hold','id':d.lastId,'stamp':request.time})
+          : a == 'confirm' ? equalSlots(old,d,{'kind':'hold','id':d.lastId,'stamp':get(/databases/$(database)/documents/sparkHolds/$(d.lastId)).data.createdAt}) && equalSlots(d.slots,d,{'kind':'booking','id':d.lastId})
+          : a == 'cancel' ? equalSlots(old,d,{'kind':'booking','id':d.lastId}) && equalSlots(d.slots,d,{'kind':'free'})
+          : a == 'release' ? releaseSlots(d,'hold',d.lastId)
+          : a == 'block' ? freeSlots(d) && equalSlots(d.slots,d,{'kind':'block','id':request.auth.uid})
+          : a == 'unblock' ? releaseSlots(d,'block',request.auth.uid) : false);
+    }
+    function entity(d) {
+      return d.lastAction in ['hold','release'] ? holdEntity(d)
+        : d.lastAction in ['confirm','cancel'] ? bookingEntity(d)
+        : d.lastAction in ['block','unblock'] ? blockEntity(d) : false;
+    }
+    function holdEntity(d) {
+      let h = getAfter(/databases/$(database)/documents/sparkHolds/$(d.lastId)).data;
+      return h.userId == request.auth.uid && h.inventoryId == resource.data.id
+        && h.startSlot == d.lastStartSlot && h.slotCount == d.lastCount && h.updatedAt == request.time
+        && (d.lastAction == 'hold' ? h.status == 'active' && h.createdAt == request.time && !exists(/databases/$(database)/documents/sparkHolds/$(d.lastId))
+          : h.status == 'released' && get(/databases/$(database)/documents/sparkHolds/$(d.lastId)).data.status == 'active');
+    }
+    function bookingEntity(d) {
+      let b = getAfter(/databases/$(database)/documents/sparkBookings/$(d.lastId)).data;
+      return b.userId == request.auth.uid && b.inventoryId == resource.data.id
+        && b.startSlot == d.lastStartSlot && b.slotCount == d.lastCount && b.updatedAt == request.time
+        && (d.lastAction == 'confirm' ? b.status == 'confirmed' && !exists(/databases/$(database)/documents/sparkBookings/$(d.lastId))
+          : b.status == 'cancelled' && get(/databases/$(database)/documents/sparkBookings/$(d.lastId)).data.status == 'confirmed');
+    }
+    function blockEntity(d) {
+      let o = getAfter(/databases/$(database)/documents/sparkOperations/$(d.lastId)).data;
+      return host(resource.data.spaceId) && o.userId == request.auth.uid && o.inventoryId == resource.data.id
+        && o.startSlot == d.lastStartSlot && o.slotCount == d.lastCount && o.createdAt == request.time
+        && d.lastAction == (o.blocked ? 'block' : 'unblock') && !exists(/databases/$(database)/documents/sparkOperations/$(d.lastId));
+    }
+    function inbox(b, uid) {
+      let n = getAfter(/databases/$(database)/documents/users/$(uid)/notifications/$(b.id + '_' + string(b.version))).data;
+      return n.bookingId == b.id && n.version == b.version && n.status == b.status && n.createdAt == request.time;
+    }
+    match /spaces/{id} { allow read: if resource.data.active == true; allow write: if false; }
+    match /sparkInventory/{id} {
+      allow get: if !exists(/databases/$(database)/documents/sparkInventory/$(id)) || get(/databases/$(database)/documents/spaces/$(resource.data.spaceId)).data.active == true;
+      allow update: if signedIn() && resource.data.schemaVersion == 2 && resource.data.id == id
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['slots','version','updatedAt','lastAction','lastId','lastStartSlot','lastCount'])
+        && request.resource.data.updatedAt == request.time && request.resource.data.version == resource.data.version + 1
+        && request.resource.data.lastStartSlot is int && request.resource.data.lastCount is int
+        && request.resource.data.lastStartSlot >= 0 && request.resource.data.lastCount >= 2 && request.resource.data.lastCount <= 16
+        && request.resource.data.lastStartSlot + request.resource.data.lastCount <= 48
+        && key(request.resource.data.lastId) && entity(request.resource.data) && slots(request.resource.data);
+    }
+    match /sparkHolds/{id} {
+      allow get: if signedIn() && (!exists(/databases/$(database)/documents/sparkHolds/$(id)) || resource.data.userId == request.auth.uid);
+      allow create: if signedIn() && accepted() && key(id) && request.resource.data.keys().hasOnly(['id','userId','spaceId','inventoryId','date','startSlot','slotCount','startAt','endAt','people','amount','slotPrice','spaceName','hostId','address','requestKey','status','version','createdAt','updatedAt'])
+        && request.resource.data.id == id && request.resource.data.requestKey == id && request.resource.data.userId == request.auth.uid
+        && request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time
+        && request.resource.data.status == 'active' && request.resource.data.version is int && request.resource.data.version == 1 && contract(request.resource.data)
+        && linked(request.resource.data.inventoryId,'hold',id,request.resource.data.startSlot,request.resource.data.slotCount);
+      allow update: if signedIn() && resource.data.userId == request.auth.uid && resource.data.status == 'active'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','updatedAt','version','releaseRequestKey','releaseReason'])
+        && request.resource.data.updatedAt == request.time && request.resource.data.version == resource.data.version + 1
+        && (request.resource.data.status == 'released' ? key(request.resource.data.releaseRequestKey) && request.resource.data.releaseReason in ['user','payment_failed'] && linked(resource.data.inventoryId,'release',id,resource.data.startSlot,resource.data.slotCount)
+          : request.resource.data.status == 'confirmed' && resource.data.createdAt + duration.value(5,'m') > request.time && getAfter(/databases/$(database)/documents/sparkBookings/$(id)).data.holdId == id && linked(resource.data.inventoryId,'confirm',id,resource.data.startSlot,resource.data.slotCount));
+    }
+    match /sparkBookings/{id} {
+      allow get: if signedIn() && (!exists(/databases/$(database)/documents/sparkBookings/$(id)) || resource.data.userId == request.auth.uid || (request.auth.token.get('host',false) == true && resource.data.hostId == request.auth.uid));
+      allow list: if signedIn() && (resource.data.userId == request.auth.uid || (request.auth.token.get('host',false) == true && resource.data.hostId == request.auth.uid)) && request.query.limit <= 30;
+      allow create: if signedIn() && validBooking(id) && inbox(request.resource.data,request.auth.uid) && inbox(request.resource.data,request.resource.data.hostId);
+      allow update: if signedIn() && resource.data.userId == request.auth.uid && resource.data.status == 'confirmed'
+        && resource.data.startAt - request.time >= duration.value(24,'h')
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','version','updatedAt','refundAmount','cancelRequestKey'])
+        && request.resource.data.status == 'cancelled' && request.resource.data.version == resource.data.version + 1 && request.resource.data.updatedAt == request.time
+        && request.resource.data.refundAmount == resource.data.amount && key(request.resource.data.cancelRequestKey)
+        && linked(resource.data.inventoryId,'cancel',id,resource.data.startSlot,resource.data.slotCount)
+        && inbox(request.resource.data,request.auth.uid) && inbox(request.resource.data,resource.data.hostId);
+    }
+    function validBooking(id) {
+      let b = request.resource.data;
+      let h = get(/databases/$(database)/documents/sparkHolds/$(id)).data;
+      return b.keys().hasOnly(['id','holdId','userId','spaceId','inventoryId','date','startSlot','slotCount','startAt','endAt','people','amount','slotPrice','spaceName','hostId','address','requestKey','paymentMode','testMode','status','version','createdAt','updatedAt'])
+        && b.id == id && b.holdId == id && b.userId == request.auth.uid && h.userId == request.auth.uid
+        && h.status == 'active' && h.createdAt + duration.value(5,'m') > request.time && h.startAt > request.time
+        && b.spaceId == h.spaceId && b.inventoryId == h.inventoryId && b.date == h.date
+        && b.startSlot == h.startSlot && b.slotCount == h.slotCount && b.startAt == h.startAt && b.endAt == h.endAt && b.people == h.people
+        && b.amount == h.amount && b.slotPrice == h.slotPrice && b.spaceName == h.spaceName && b.hostId == h.hostId && b.address == h.address
+        && b.status == 'confirmed' && b.version is int && b.version == 1 && b.paymentMode == 'test' && b.testMode in ['success','delay'] && key(b.requestKey)
+        && b.createdAt == request.time && b.updatedAt == request.time
+        && getAfter(/databases/$(database)/documents/sparkHolds/$(id)).data.status == 'confirmed'
+        && linked(b.inventoryId,'confirm',id,b.startSlot,b.slotCount);
+    }
+    match /sparkOperations/{id} {
+      allow get: if signedIn() && (!exists(/databases/$(database)/documents/sparkOperations/$(id)) || resource.data.userId == request.auth.uid);
+      allow create: if signedIn() && key(id) && request.resource.data.keys().hasOnly(['id','userId','requestKey','spaceId','inventoryId','date','startSlot','slotCount','startAt','endAt','blocked','createdAt'])
+        && request.resource.data.id == id && request.resource.data.requestKey == id && request.resource.data.userId == request.auth.uid
+        && host(request.resource.data.spaceId) && request.resource.data.blocked is bool && request.resource.data.createdAt == request.time
+        && validBlock(request.resource.data)
+        && linked(request.resource.data.inventoryId,request.resource.data.blocked ? 'block' : 'unblock',id,request.resource.data.startSlot,request.resource.data.slotCount);
+    }
+    function validBlock(o) {
+      let s = get(/databases/$(database)/documents/spaces/$(o.spaceId)).data;
+      let d = get(/databases/$(database)/documents/sparkInventory/$(o.inventoryId)).data;
+      return o.spaceId == d.spaceId && o.date == d.date && o.startSlot is int && o.slotCount is int && o.slotCount >= 2 && o.slotCount <= 16
+        && o.startSlot >= 0 && o.startSlot + o.slotCount <= 48
+        && o.startSlot * 30 >= s.openMinute && (o.startSlot + o.slotCount) * 30 <= s.closeMinute
+        && o.startAt == d.dayStart + duration.value(o.startSlot * 30,'m') && o.startAt > request.time && o.endAt == o.startAt + duration.value(o.slotCount * 30,'m');
+    }
+    match /sparkReviews/{id} {
+      allow read: if true;
+      allow create: if signedIn() && request.resource.data.keys().hasOnly(['bookingId','userId','spaceId','rating','content','requestKey','createdAt'])
+        && request.resource.data.bookingId == id && request.resource.data.userId == request.auth.uid
+        && get(/databases/$(database)/documents/sparkBookings/$(id)).data.userId == request.auth.uid
+        && get(/databases/$(database)/documents/sparkBookings/$(id)).data.spaceId == request.resource.data.spaceId
+        && get(/databases/$(database)/documents/sparkBookings/$(id)).data.status == 'confirmed' && get(/databases/$(database)/documents/sparkBookings/$(id)).data.endAt <= request.time
+        && request.resource.data.rating is int && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
+        && request.resource.data.content is string && request.resource.data.content.matches('\\S[\\s\\S]{8,498}\\S') && key(request.resource.data.requestKey) && request.resource.data.createdAt == request.time;
+    }
+    match /users/{uid} {
+      allow read: if self(uid);
+      allow create: if self(uid) && request.resource.data.keys().hasOnly(['nickname','termsAccepted','termsVersion','privacyVersion']) && request.resource.data.nickname is string && request.resource.data.nickname.size() >= 2 && request.resource.data.nickname.size() <= 20 && request.resource.data.termsAccepted == true && request.resource.data.termsVersion == '1.0' && request.resource.data.privacyVersion == '1.0';
+      allow update: if self(uid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname']) && request.resource.data.nickname is string && request.resource.data.nickname.size() >= 2 && request.resource.data.nickname.size() <= 20;
+      match /clock/{id} { allow read: if self(uid); allow create,update: if self(uid) && id == 'current' && request.resource.data.keys().hasOnly(['at']) && request.resource.data.at == request.time; }
+      match /favorites/{spaceId} { allow read,delete: if self(uid); allow create,update: if self(uid) && request.resource.data.keys().hasOnly(['spaceId']) && request.resource.data.spaceId == spaceId; }
+      match /notifications/{id} {
+        allow read: if self(uid);
+        allow update: if self(uid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']) && request.resource.data.read is bool;
+        allow create: if signedIn() && validNotification(uid,id);
+      }
+    }
+    function validNotification(uid,id) {
+      let n = request.resource.data;
+      let b = getAfter(/databases/$(database)/documents/sparkBookings/$(n.bookingId)).data;
+      return n.keys().hasOnly(['bookingId','version','status','createdAt','read','title','body'])
+        && b.userId == request.auth.uid && uid in [b.userId,b.hostId] && id == b.id + '_' + string(b.version)
+        && n.version == b.version && n.status == b.status && b.status in ['confirmed','cancelled'] && b.updatedAt == request.time
+        && n.createdAt == request.time && n.read == false
+        && n.title == (b.status == 'confirmed' ? '공간 예약이 확정됐어요' : '공간 예약이 취소됐어요')
+        && n.body == b.spaceName + ' · 예약내역에서 확인해 주세요.';
+    }
+    match /{document=**} { allow read,write: if false; }
   }
-  match /{document=**} { allow read,write: if false; }
- }
 }

@@ -1,50 +1,52 @@
-# Firebase 서버 설계
+# Spark용 Firestore 계약
 
-기획서의 REST API 의도를 Firebase Callable Functions로 옮겼습니다. Firebase Auth ID 토큰을 SDK가 전달하고 서버가 `request.auth.uid`를 사용합니다. 클라이언트가 보낸 userId·role은 권한 판단에 쓰지 않습니다. 통화는 정수 원, 시각은 UTC epoch milliseconds, 화면과 운영일 구분은 Asia/Seoul입니다.
+Android → Firebase Auth → Firestore SDK 트랜잭션 → Security Rules 구조입니다. Cloud Functions·Admin SDK를 앱의 예약 처리 경로에서 사용하지 않습니다. Admin SDK는 로컬 시드·신뢰할 수 있는 관리자 도구에만 있습니다.
 
-## 컬렉션
+## 데이터와 권한
 
-| 경로 | 용도 / 쓰기 주체 |
+| 경로 | 용도 |
 | --- | --- |
-| `spaces/{spaceId}` | 공개 공간 정보·시설·운영 시각·정원·슬롯 단가 / Admin |
-| `inventory/{spaceId}_{YYYY-MM-DD}` | KST 운영일별 30분 슬롯 map / Functions |
-| `holds/{holdId}` | 5분 선점·요금 스냅샷·상태 / Functions |
-| `bookings/{bookingId}` | 예약·계약 스냅샷·버전·테스트 환불 / Functions |
-| `requests/{sha256(uid:operation:key)}` | 요청 fingerprint·결과 원자적 저장 / Functions |
-| `reviews/{bookingId}` | 완료 예약당 1회 후기 / Functions |
-| `users/{uid}` | 닉네임·필수 동의 버전 / 본인, 필드 제한 |
-| `users/{uid}/favorites/{spaceId}` | 개인 찜 / 본인 |
-| `users/{uid}/notifications/{id}` | 서버 생성 알림, 본인은 읽음만 수정 |
-| `outbox/{eventId}` | 예약 상태 변경 이벤트 / Functions, 발송 워커 미구현 |
+| `spaces/{spaceId}` | 공개 공간·정원·운영 시각·고정단가, `schemaVersion:2`, `pricingMode:flat` / 관리자 등록 |
+| `sparkInventory/{spaceId}_{KST-date}` | 48개 30분 슬롯·운영일 UTC Timestamp·버전·마지막 원자적 작업 |
+| `sparkHolds/{requestKey}` | 고객별 5분 선점·계약 스냅샷·생성 서버 Timestamp |
+| `sparkBookings/{holdId}` | 확정·취소 예약, 계약 스냅샷·버전·확정 요청 키 |
+| `sparkOperations/{requestKey}` | 운영 차단·해제 요청의 불변 결과 |
+| `sparkReviews/{bookingId}` | 완료된 본인 예약에 대한 후기 1회 |
+| `users/{uid}` | 본인의 닉네임·약관 동의; role 쓰기 금지 |
+| `users/{uid}/clock/current` | 본인만 기록하는 서버 Timestamp 기준 시각 |
+| `users/{uid}/favorites/{spaceId}` | 본인 찜 |
+| `users/{uid}/notifications/{bookingId}_{version}` | 확정·취소와 원자적으로 생성하는 앱 알림함 |
 
-요청 키는 작업·계정에 묶고 본문을 SHA-256 fingerprint로 비교합니다. 같은 키에 다른 본문은 `REQUEST_KEY_REUSED`입니다. 결과와 재고 변경을 같은 트랜잭션에 기록합니다. 서버 함수는 현재 평평한 필드의 요청만 받습니다.
+금액은 정수 원, Firestore 시각은 UTC Timestamp, 앱의 표시는 Asia/Seoul입니다. Repository 경계에서 Timestamp를 기존 화면의 epoch milliseconds로 변환합니다.
 
-각 공간·운영일의 재고 문서를 읽고 갱신하므로 같은 날의 경합은 Firestore 트랜잭션 재시도로 직렬화됩니다. 예약은 [시작, 종료)이므로 인접한 시간은 허용합니다. 만료 선점은 재고 정리 작업이 없어도 점유로 보지 않습니다. 확정 시 선점의 소유자·만료·재고 ID를 다시 확인합니다. 슬롯당 `space.slotPrices[minuteOfDay]`가 있으면 이를, 없으면 `slotPrice`를 사용합니다.
+## 원자성
 
-## Callable 목록 (asia-northeast3)
+한 날짜 재고 문서의 `slots` map에 `'0'`~`'47'` 키를 고정합니다. 슬롯 값은 `free`, `hold`(ID·서버 stamp), `booking`(ID), `block`(운영자 ID) 중 하나입니다. 공개 재고에 고객 이름·연락처·결제 정보는 넣지 않습니다. 하루 단위 문서에서 경쟁하는 거래를 Firestore 트랜잭션이 재시도합니다. 포트폴리오 규모를 위한 구조이며 같은 공간·일자의 쓰기 경합이 큰 규모에는 다른 설계가 필요합니다.
 
-| 함수 | 주요 입력 | 결과 |
-| --- | --- | --- |
-| `getAvailability` | spaceId, date | busy epoch 목록, serverNow; 비회원 허용 |
-| `createHold` | spaceId, startAt, endAt, people, requestKey | hold·amount·expiresAt·serverNow |
-| `releaseHold` | holdId, requestKey | released |
-| `confirmBooking` | holdId, paymentMode, policyAgreed, requestKey | confirmed + bookingId / payment_failed |
-| `cancelBooking` | bookingId, expectedVersion, requestKey | cancelled |
-| `getBookings` | 없음 | 본인 예약 최대 100개, 서버 기준 completed·canCancel |
-| `submitReview` | bookingId, rating, content, requestKey | saved |
-| `getHostBookings` | 없음 | 소유 운영자 예약 최대 100개 |
-| `setBlock` | spaceId, startAt, endAt, blocked, requestKey | saved |
+보안 규칙은 다음을 함께 검증합니다.
 
-`paymentMode`: success / failure / delay. 외부 PG나 실제 과금은 없습니다. failure는 선점을 해제하고 거래를 생성하지 않습니다. delay는 정상 커밋 후 응답을 3초 지연합니다. 응답이 유실돼도 **기존 키**로 다시 요청하면 동일 예약을 반환합니다. 미확정 요청은 `transaction_recovery` 앱 preferences에 저장하며 확인 전 새 결제를 시도하지 않습니다.
+- 바꾼 슬롯 키가 선택한 2~16개 범위 안에만 있는지 검사합니다. 남는 슬롯·다른 예약을 변경할 수 없습니다.
+- 30분 경계, 1~8시간, 정원, 운영 시각, `dayStart` 기반 시작·종료, 관리자 가격·명칭·주소 스냅샷을 검사합니다.
+- `getAfter()`로 선점/예약/재고/앱 알림함의 변경이 **같은 커밋**에 들어왔는지 검사합니다. 문서 하나만 직접 쓰는 요청은 거절합니다.
+- 고객 UID는 인증 토큰에서 비교하고 운영 권한은 `host` custom claim과 공간 `hostId`를 모두 검사합니다.
+- 사용자가 금액·서버 Timestamp·UID·예약 상태를 바꾸거나 권한을 높이는 쓰기는 거절합니다.
 
-취소는 정확히 24시간 전까지 포함해서 서버에서 판정합니다. 슬롯 반환·취소 버전 증가·테스트 환불액·고객 및 운영자 알림함·outbox를 같은 트랜잭션에서 커밋합니다. 이미 취소된 거래의 반복 취소는 같은 결과를 반환합니다. 운영 차단 해제는 자신의 block만 지우며 예약 슬롯을 지우지 않습니다.
+16개 슬롯을 별도 문서로 읽지 않아 get() 한도를 피합니다. 비교식도 불필요한 인덱스 평가를 생략하도록 구성했습니다. 최대 8시간의 생성·확정·취소를 실제 Emulator에서 검사합니다.
 
-오류는 Firebase Callable 표준 envelope의 code / message 및 `details.code`, `details.requestId`를 사용합니다. REST HTTP 409를 직접 반환하는 구조는 아닙니다. `SLOT_TAKEN`, `HOLD_EXPIRED`, `STATE_CONFLICT`, `CANCEL_DEADLINE` 등은 `failed-precondition`으로 매핑됩니다.
+## 선점·확정·실패 복구
 
-## 인증과 향후 연동
+선점의 `createdAt`와 슬롯 `stamp`는 `serverTimestamp()`이며 규칙에서 `request.time`과 같은지 검사합니다. 만료는 **서버 생성 시각 + 5분**으로 계산합니다. 사용자가 임의의 `expiresAt`를 보내는 구조가 아닙니다. 만료 선점은 자동 삭제 없이 새 선점이 대체할 수 있습니다. 늦은 해제 요청은 대체된 다른 선점을 지우지 않습니다.
 
-이메일 인증과 재설정 메일은 Firebase Auth를 사용합니다. 비밀번호를 Firestore·앱 저장소·로그에 저장하지 않습니다. 필수 동의 프로필이 없는 계정은 선점할 수 없으며 앱에서 가입 완료 화면으로 안내합니다. 고객 가입으로 host claim을 설정할 수 없습니다.
+선점 ID는 요청 키이며 변경 불가능합니다. 예약 ID는 선점 ID이므로 한 선점에 여러 예약을 만들 수 없습니다. 확정 요청 키·결제 모드·동의 값이 같은 재시도는 기존 결과를 반환합니다. 같은 키의 본문을 바꿔 덮어쓸 수 없습니다. 동시에 확정한 요청이 규칙 충돌로 거절돼도 서버에서 기존 결과를 다시 읽고 같은 키인지 확인합니다. 기기에 저장한 미확정 요청은 새 키로 다시 결제하지 않습니다.
 
-문서의 소셜 공급자별 별도 계정 정책과 Firebase Auth의 기본 이메일 연결 정책은 동일하지 않습니다. 공급자 구현 시 이를 명시적으로 설계해야 하며, 현재 소셜 로그인은 구현하지 않았습니다. 카카오는 서버 토큰 검증 후 Firebase custom token 발급 경로가 필요합니다. Apple·Google은 등록된 OAuth 클라이언트와 Android 서명 인증서 설정이 필요합니다.
+테스트 결제만 있습니다. `failure`는 선점을 해제하고 예약을 만들지 않으며 결과를 선점에 기록합니다. `delay`는 커밋 후 응답을 3초 지연합니다. 이는 PG·실제 과금·실제 환불이 아닙니다.
 
-FCM 구현 시 outbox 소비, 중복 발송 키, 상태 재검증, 그룹 설정, 기기별 토큰과 로그아웃 해제, TTL, 재시도 및 예약 알림을 추가해야 합니다. 현재 outbox 기록만으로 푸시 발송이 이루어지지는 않습니다.
+취소는 `startAt - request.time >= 24시간`일 때만 가능합니다. 슬롯 반환·취소 버전 증가·테스트 환불액·고객/운영자 알림함을 한 트랜잭션에서 저장합니다. 완료 여부는 서버 시각 조회 후 화면에서 계산하며 후기 규칙은 종료 시각이 지난 본인 확정 예약인지 다시 확인합니다.
+
+## 서버 시각과 읽기 비용
+
+보호 동작 전 본인의 `clock/current.at`를 서버 Timestamp로 기록·조회합니다. 규칙은 그 값을 직접 신뢰하지 않고 각 쓰기의 `request.time`으로 최종 판정합니다. 기기 시각이 잘못돼도 거래 조건을 우회할 수 없습니다. 게스트의 시간·금액 표시는 안내용이며 실제 선점에서 다시 검증합니다.
+
+자동 Firestore 리스너·주기적 폴링은 없습니다. 공간/예약/알림 목록은 30개, 후기 20개, 찜 50개로 제한합니다. 예약은 최신순으로 조회하고 필요한 composite index를 `firestore.indexes.json`에 포함했습니다. 페이지네이션은 후속 범위입니다. 서버 시각 동기화에도 읽기·쓰기가 발생하고, 보안 규칙의 문서 접근도 읽기 비용에 포함됩니다.
+
+현재 `call(name,data)`는 화면과 Repository의 내부 호출 호환 인터페이스일 뿐 HTTP Callable API가 아닙니다. 앱에 `firebase-functions` SDK나 배포할 Functions 소스가 없습니다.

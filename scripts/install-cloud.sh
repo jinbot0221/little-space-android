@@ -48,6 +48,7 @@ if [[ ! -f "$ANDROID_HOME/platforms/android-35/android.jar" || ! -f "$ANDROID_HO
 fi
 # Avoid overwriting a user's local SDK configuration.
 if [[ ! -f local.properties ]]; then printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties; fi
-npm --prefix functions ci --no-audit --no-fund
+npm --prefix firebase ci --no-audit --no-fund
 ./gradlew :app:assembleDebug :app:lintDebug --no-daemon
-npm --prefix functions test
+./scripts/install-firestore-emulator.sh
+./scripts/test-integration.sh

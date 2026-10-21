@@ -1,0 +1,19 @@
+{
+  "name": "littlespace-spark-tools",
+  "private": true,
+  "engines": {
+    "node": "22"
+  },
+  "scripts": {
+    "seed": "node scripts/seed.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "firebase-admin": "13.4.0"
+  },
+  "devDependencies": {
+    "firebase-tools": "14.2.1",
+    "@firebase/rules-unit-testing": "4.0.1",
+    "firebase": "11.6.0"
+  }
+}

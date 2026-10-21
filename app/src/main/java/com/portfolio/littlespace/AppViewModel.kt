@@ -4,8 +4,9 @@ import android.app.Application
 import androidx.compose.runtime.*
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.google.firebase.functions.FirebaseFunctionsException
+import com.google.firebase.firestore.FirebaseFirestoreException
 import java.time.LocalDate
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
@@ -89,7 +90,7 @@ constructor(app: Application, private val screenshotSpaces: List<Space>? = null)
                 block()
             } catch (e: Exception) {
                 error = errorText(e)
-                val code = ((e as? FirebaseFunctionsException)?.details as? Map<*, *>)?.get("code")
+                val code = (e as? SparkException)?.code
                 if (code == "HOLD_EXPIRED" && repo.pending() != null) {
                     repo.clearPending()
                     hasRecovery = false
@@ -104,15 +105,24 @@ constructor(app: Application, private val screenshotSpaces: List<Space>? = null)
     }
 
     private fun errorText(e: Exception): String {
-        val code =
-            (e as? FirebaseFunctionsException)?.details.let {
-                (it as? Map<*, *>)?.get("code") as? String
-            }
+        if (e is TimeoutCancellationException) return "연결이 지연되고 있어요. 미확정 예약은 같은 요청으로 결과를 확인해 주세요."
+        if (
+            e is FirebaseFirestoreException &&
+                e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED
+        )
+            return "권한·선점·예약 상태가 변경됐어요. 최신 내역과 가능 시간을 확인해 주세요."
+        if (
+            e is FirebaseFirestoreException &&
+                e.code == FirebaseFirestoreException.Code.RESOURCE_EXHAUSTED
+        )
+            return "무료 사용량 한도에 도달했어요. 잠시 후 다시 이용해 주세요."
+        val code = (e as? SparkException)?.code
         return when (code) {
             "SLOT_TAKEN" -> "방금 다른 사용자가 선택한 시간이에요. 가능 시간을 새로 조회해 주세요."
             "HOLD_EXPIRED" -> "5분 선점이 만료됐어요. 시간을 다시 선택해 주세요."
             "CANCEL_DEADLINE" -> "이용 24시간 전까지만 취소할 수 있어요."
             "REQUEST_KEY_REUSED" -> "기존 요청과 내용이 달라요. 예약내역에서 결과를 확인해 주세요."
+            "DAY_UNAVAILABLE" -> "이 날짜는 아직 운영 일정이 등록되지 않았어요. 다른 날짜를 선택해 주세요."
             "TERMS_REQUIRED" -> "가입을 완료해 주세요."
             "STATE_CONFLICT" -> "상태가 변경됐어요. 예약내역을 다시 조회해 주세요."
             else -> e.localizedMessage ?: "연결을 확인하고 다시 시도해 주세요."

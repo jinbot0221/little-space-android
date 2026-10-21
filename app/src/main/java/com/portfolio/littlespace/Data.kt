@@ -3,16 +3,19 @@ package com.portfolio.littlespace
 import android.content.Context
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
+import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.UserProfileChangeRequest
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.functions.FirebaseFunctions
+import com.google.firebase.firestore.Query
 import java.time.*
 import java.time.format.DateTimeFormatter
+import java.util.Date
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 val KST: ZoneId = ZoneId.of("Asia/Seoul")
 
@@ -71,26 +74,42 @@ class FirebaseRepository(context: Context) {
             )
     val auth = FirebaseAuth.getInstance(app)
     val db = FirebaseFirestore.getInstance(app)
-    private val functions = FirebaseFunctions.getInstance(app, "asia-northeast3")
-    private val prefs = context.getSharedPreferences("transaction_recovery", Context.MODE_PRIVATE)
+    private val spark = SparkStore(db, auth)
+    private val prefs =
+        context.getSharedPreferences("transaction_recovery_spark_v2", Context.MODE_PRIVATE)
 
     init {
         if (BuildConfig.USE_EMULATORS) {
             auth.useEmulator(BuildConfig.EMULATOR_HOST, 9099)
             db.useEmulator(BuildConfig.EMULATOR_HOST, 8080)
-            functions.useEmulator(BuildConfig.EMULATOR_HOST, 5001)
         }
     }
 
-    suspend fun call(name: String, data: Map<String, Any> = emptyMap()): Map<String, Any> {
-        @Suppress("UNCHECKED_CAST")
-        return functions.getHttpsCallable(name).call(data).await().data as Map<String, Any>
-    }
+    suspend fun call(name: String, data: Map<String, Any> = emptyMap()): Map<String, Any> =
+        withTimeout(20_000L) {
+            when (name) {
+                "getAvailability" -> spark.availability(data)
+                "createHold" -> spark.createHold(data)
+                "releaseHold" -> spark.releaseHold(data)
+                "confirmBooking" -> spark.confirm(data)
+                "cancelBooking" -> spark.cancel(data)
+                "getBookings" -> spark.bookings()
+                "getHostBookings" -> spark.bookings(host = true)
+                "submitReview" -> spark.review(data)
+                "setBlock" -> spark.block(data)
+                else -> error("Unknown Spark operation: $name")
+            }
+        }
 
     suspend fun spaces() =
-        db.collection("spaces").whereEqualTo("active", true).get().await().documents.map {
-            spaceOf(it.data!!, it.id)
-        }
+        db.collection("spaces")
+            .whereEqualTo("active", true)
+            .whereEqualTo("schemaVersion", 2)
+            .limit(30)
+            .get()
+            .await()
+            .documents
+            .map { spaceOf(it.data!!, it.id) }
 
     suspend fun login(email: String, password: String) {
         auth.signInWithEmailAndPassword(email, password).await()
@@ -129,7 +148,13 @@ class FirebaseRepository(context: Context) {
 
     suspend fun favorites(): Set<String> {
         val uid = auth.currentUser?.uid ?: return emptySet()
-        return db.collection("users/$uid/favorites").get().await().documents.map { it.id }.toSet()
+        return db.collection("users/$uid/favorites")
+            .limit(50)
+            .get()
+            .await()
+            .documents
+            .map { it.id }
+            .toSet()
     }
 
     suspend fun favorite(id: String, save: Boolean) {
@@ -138,22 +163,30 @@ class FirebaseRepository(context: Context) {
     }
 
     suspend fun reviews(spaceId: String) =
-        db.collection("reviews")
+        db.collection("sparkReviews")
             .whereEqualTo("spaceId", spaceId)
-            .limit(30)
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .limit(20)
             .get()
             .await()
             .documents
             .map { it.data!! }
 
-    suspend fun notifications() =
-        db.collection("users/${checkNotNull(auth.currentUser).uid}/notifications")
+    suspend fun notifications(): List<Map<String, Any>> {
+        val now = spark.serverNow()
+        return db.collection("users/${checkNotNull(auth.currentUser).uid}/notifications")
+            .whereGreaterThanOrEqualTo("createdAt", Timestamp(Date(now - 30 * 86400000L)))
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .limit(30)
             .get()
             .await()
             .documents
-            .map { it.data!!.plus("id" to it.id) }
-            .filter { it.long("createdAt") >= System.currentTimeMillis() - 30 * 86400000L }
-            .sortedByDescending { it.long("createdAt") }
+            .map { doc ->
+                doc.data!!
+                    .mapValues { (_, v) -> if (v is Timestamp) v.toDate().time else v }
+                    .plus("id" to doc.id)
+            }
+    }
 
     suspend fun markRead(id: String) {
         db.document("users/${checkNotNull(auth.currentUser).uid}/notifications/$id")

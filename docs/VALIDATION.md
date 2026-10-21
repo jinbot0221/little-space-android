@@ -1,25 +1,33 @@
-# 검증 기록
+# Spark 버전 검증 기록
 
-2026-10-20 클라우드 환경에서 수행.
+2026-10-22 (한국 시각), 이 클라우드 머신에서 실행했습니다.
 
-| 검사 | 상태 | 근거 |
+| 검사 | 결과 | 범위 |
 | --- | --- | --- |
-| Node 22 단위·핸들러 테스트 | 통과 11개 | `cd functions && npm test` |
-| 서버 JS 구문 | 통과 | `node --check` |
-| Android Debug APK / Lint | 통과 | `:app:assembleDebug :app:lintDebug`, Lint 오류 0 / 백업 설정·KTX 사용 권고 경고 2 |
-| 실제 Firebase Emulator 통합 | 차단, 미실행 | `storage.googleapis.com`에서 Emulator JAR 다운로드 403 |
-| 실제 Firebase 연결 UI / 배포 | 미실행 | 아래 촬영용 UI 확인과 별도 |
+| Android Debug APK·Lint | 통과 | Functions 의존성 없는 Spark 앱 |
+| 실제 Firestore Emulator 규칙·경합 테스트 | 30개 통과 / 0개 실패·생략 | 가격·권한·시간·재고·중복·운영·후기·알림 및 카탈로그 보존 |
+| Android SDK 통합 테스트 | 1개 통과 / 0개 실패·생략 | Android 8.0 실제 에뮬레이터에서 Auth 로그인→선점→같은 키 재조회→확정→취소→재고 반환·알림함 |
+| 실제 Spark 프로젝트 배포·과금 | 미실행 | 프로젝트 ID·라이브 설정 미제공, 결제 계정 연결 없음 |
 
-핸들러 테스트는 실제 Cloud Functions 코드를 메모리 트랜잭션 어댑터에 연결합니다. 시간 경쟁·중복 키·만료·실패 결제·소유권을 검사하며 모든 읽기가 쓰기 전에 수행되는지도 확인합니다. **실제 Firestore 트랜잭션 동작이나 보안 규칙 통과를 증명하지는 않습니다.** 별도의 `test/integration/booking.test.js`가 Auth·Functions·Firestore Emulator를 사용하는 검증을 담당합니다.
+이전의 메모리 트랜잭션 모형 테스트는 제거했습니다. 현재 `firebase/test/rules.test.js`는 **실제 Emulator에 이 저장소의 보안 규칙을 올리고** 승인·거절을 검사합니다. 최대 8시간 16슬롯의 생성·확정·취소가 규칙의 문서 접근·평가 한도 안에서 동작하는지도 검증합니다.
 
-환경 문제 해결: 시스템 Java는 JRE이므로 공식 JDK 21을 체크섬 검증 후 설치했습니다. Gradle은 환경 HTTPS 프록시를 사용하고 시스템 Java CA store로 TLS를 검증합니다. 검증을 우회하지 않았습니다. Android SDK 35·Build Tools 35.0.0·플랫폼 도구를 설치했습니다.
+## 중요한 검증 사례
 
-네트워크 초안에는 `storage.googleapis.com`(Firebase Emulator)과 `images.unsplash.com`(문서의 예시 사진)을 추가했습니다. 초안 저장은 현재 네트워크 적용 또는 환경 게시를 의미하지 않습니다. 네트워크 적용 후 `./scripts/test-integration.sh`를 실행해야 합니다.
+- 두 고객이 같은 슬롯에 경합하면 정확히 1건의 선점만 승인, 인접 구간 허용
+- 가격·정원·소유자·명칭·시각 위조, 범위 밖 또는 선택하지 않은 슬롯 변경 거절
+- 만료 선점 확정 거절·정리 작업 없는 대체·늦은 해제가 새 선점을 지우지 않음
+- 같은 확정 키의 재요청은 예약·알림을 중복 생성하지 않음
+- 재고·알림 누락 확정, 환불액 위조 취소, 재고 반환 없는 취소 거절
+- 24시간 미만 취소 거절, 타인 거래 접근 거절, 소유 운영자만 차단/해제
+- 가짜 서버 시각·권한 상승·알림 스팸·후기 중복·공백 후기 거절
+- 기존 운영일 재고는 카탈로그 갱신으로 초기화되지 않음
 
-`./scripts/install-cloud.sh` 재실행도 성공했습니다. 의존성을 lockfile 기준으로 재설치하고 APK·Lint·11개 서버 테스트를 다시 완료했습니다. 새 머신에서의 스냅샷 복원·환경 게시 검증은 수행하지 않았습니다.
+## 환경과 한계
 
-## 화면 촬영 확인 · 2026-10-21
+Firestore Emulator는 **Google 공식 Cloud SDK 1.22.0 배포본**을 공식 manifest의 SHA-256으로 확인한 뒤 원래 launcher로 실행했습니다. Firebase CLI 기본 JAR 배포 호스트가 403을 반환해 이 공식 배포 경로를 사용했습니다. JAR manifest 변경, 체크섬 변경, TLS 검증 해제는 하지 않았습니다.
 
-Android 8.0(API 26) 에뮬레이터에서 debug 전용 촬영 Activity를 실행해 **14개 화면의 원본 PNG(1080×2340)**를 저장했습니다. Compose 접근성 텍스트가 나타날 때까지 기다린 뒤 캡처했으며, PNG 청크 CRC와 파일 완결성, 해상도, README 이미지·확대 링크를 확인했습니다. 대표 화면의 실제 렌더링도 시각적으로 확인했습니다.
+Auth Emulator도 실제 실행했고, Android 테스트는 mock 인증 세션이 아닌 이메일 로그인으로 검사했습니다. 규칙 공격 테스트는 Rules Unit Testing의 인증 컨텍스트와 관리자 초기화 데이터를 사용합니다. 운영 보안 설정, 실제 계정 메일 발송, 대규모 부하, 실제 Spark 일일 할당량 소진, 라이브 데이터 마이그레이션은 검사하지 않았습니다.
 
-촬영용 오프라인 가상 공간·거래를 사용했습니다. 실제 Firebase 인증·거래 검증과 구분합니다. 사진은 실패 대체 상태로 표시됩니다. 촬영 진입점은 debug 소스에만 있고 release 병합 manifest에서 제외된 것을 확인했습니다. 변경 후 Debug APK 빌드와 Lint도 통과했습니다. 재촬영 방법과 전체 이미지는 [스크린샷 갤러리](screenshots/README.md)에 있습니다.
+이전 Functions 버전과 화면 촬영 기록은 [과거 검증 기록](VALIDATION-legacy.md)에 보존했습니다. 14장 스크린샷은 이전 버전의 촬영용 가상 데이터이며 현재 Spark 서버 검증의 증거로 사용하지 않습니다.
+
+`./scripts/install-cloud.sh` 최종 재실행도 성공했습니다. lockfile 설치, Debug APK·Lint, 공식 Emulator 실행, 30개 규칙 테스트, 자신이 시작한 Emulator 종료까지 확인했습니다. 설치·시작 지침은 Spark 구성으로 환경 설정 초안에 저장했으며 초안 저장은 게시를 의미하지 않습니다.

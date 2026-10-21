@@ -13,11 +13,14 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: functions/package-lock.json
+          cache-dependency-path: firebase/package-lock.json
       - uses: gradle/actions/setup-gradle@v4
       - run: ./gradlew :app:assembleDebug :app:lintDebug
       - run: npm ci --no-audit --no-fund
-        working-directory: functions
-      - run: npm test
-        working-directory: functions
+        working-directory: firebase
+      - run: ./scripts/install-firestore-emulator.sh
+        env:
+          LITTLESPACE_FIRESTORE_SDK_DIR: /tmp/littlespace-firestore-sdk
       - run: ./scripts/test-integration.sh
+        env:
+          LITTLESPACE_FIRESTORE_SDK_DIR: /tmp/littlespace-firestore-sdk
