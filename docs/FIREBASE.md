@@ -69,7 +69,9 @@ Android → Firebase Auth → Firestore SDK 트랜잭션 → Security Rules 구�
 
 ```bash
 firebase/node_modules/.bin/firebase login
-firebase/node_modules/.bin/firebase deploy --project YOUR_PROJECT_ID --only firestore
+firebase/node_modules/.bin/firebase deploy --project littlespace-a7087 --only firestore
 ```
 
 Firebase 콘솔을 사용한다면 Firestore Database → 규칙에서 저장소 루트의 `firestore.rules` 전체 내용을 반영하고 게시합니다. 규칙을 모두 공개하는 방식으로 해결하지 않습니다. Firebase Auth에 이미 만들어진 계정은 삭제하거나 다시 가입할 필요 없이 로그인 후 가입 완료를 이어갑니다.
+
+실제 연결 대상 프로젝트는 `littlespace-a7087`입니다. `.firebaserc`의 `production` 별칭으로 등록했으며 로컬 테스트용 기본 프로젝트는 `demo-teumgot`을 유지합니다. 실제 Android 설정 파일도 `project_info.project_id`가 `littlespace-a7087`인 파일을 사용해야 합니다. 이 클라우드 환경에서는 Firestore API 접속이 프록시에서 차단되고 Firebase CLI 인증 계정도 없어 라이브 규칙 상태는 검증하지 못했습니다.

@@ -1,1 +1,6 @@
-{"projects":{"default":"demo-teumgot"}}
+{
+  "projects": {
+    "default": "demo-teumgot",
+    "production": "littlespace-a7087"
+  }
+}

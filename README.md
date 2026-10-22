@@ -104,7 +104,7 @@ Android SDK 경로와 실제 Auth 연동까지 확인하는 테스트도 포함�
 2. Email/Password Auth와 Cloud Firestore를 활성화합니다. 신뢰할 수 있는 관리자 환경에서 **보안 규칙·인덱스만** 배포합니다.
 
 ```bash
-firebase/node_modules/.bin/firebase deploy --project YOUR_PROJECT_ID --only firestore
+firebase/node_modules/.bin/firebase deploy --project littlespace-a7087 --only firestore
 ```
 
 3. Firebase 콘솔에서 받은 `google-services.json`을 `app/`에 넣고 다시 빌드합니다. 또는 로컬 Gradle 속성(예: `~/.gradle/gradle.properties`)에 Android 공개 설정을 넣습니다. 서비스 계정 키는 앱·저장소·채팅에 넣지 않습니다.
@@ -118,7 +118,7 @@ useEmulators=false
 
 4. 관리자가 공간과 운영일을 등록하고 운영자 계정에 custom claim을 지정합니다. [Spark 운영·전환 안내](docs/SPARK.md)를 따릅니다.
 
-실제 프로젝트 ID·설정이 제공되지 않아 라이브 배포는 하지 않았습니다. `app/google-services.json`에서 현재 Android 패키지에 맞는 설정을 읽어 `FirebaseOptions`에 적용합니다. 파일은 Git에서 제외됩니다. 기존 Functions 버전의 데이터는 자동 변환하지 않습니다. 원본을 삭제하지 않고 새 `spark*` 컬렉션을 사용합니다.
+실제 프로젝트 ID는 `littlespace-a7087`입니다. Android 설정·Firebase 배포 인증이 제공되지 않아 라이브 배포는 하지 않았습니다. `app/google-services.json`에서 현재 Android 패키지에 맞는 설정을 읽어 `FirebaseOptions`에 적용합니다. 파일은 Git에서 제외됩니다. 기존 Functions 버전의 데이터는 자동 변환하지 않습니다. 원본을 삭제하지 않고 새 `spark*` 컬렉션을 사용합니다.
 
 [Firebase 계약·보안 설계](docs/FIREBASE.md) · [Spark 한도·관리 절차](docs/SPARK.md) · [검증 기록](docs/VALIDATION.md)
 
