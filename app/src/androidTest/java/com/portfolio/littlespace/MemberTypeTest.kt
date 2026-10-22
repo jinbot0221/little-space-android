@@ -92,4 +92,37 @@ class MemberTypeTest {
             }
         }
     }
+    @Test
+    fun signedInAccountWithoutProfileResumesSignupOnStartup() = runBlocking {
+        check(BuildConfig.USE_EMULATORS && BuildConfig.FIREBASE_PROJECT_ID == "demo-teumgot")
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val app = instrumentation.targetContext.applicationContext as Application
+        val repo = FirebaseRepository(app)
+        repo.auth.createUserWithEmailAndPassword("incomplete-${System.nanoTime()}@teumgot.test", "Teumgot123!").await()
+        lateinit var vm: AppViewModel
+        instrumentation.runOnMainSync { vm = AppViewModel(app) }
+        withTimeout(20_000) {
+            while (true) {
+                var loaded = false
+                instrumentation.runOnMainSync { loaded = !vm.loading }
+                if (loaded) break
+                delay(50)
+            }
+        }
+        instrumentation.runOnMainSync {
+            assertNull(vm.error)
+            assertEquals("가입 완료", vm.route)
+            assertNotNull(vm.email)
+            vm.logout()
+        }
+        withTimeout(20_000) {
+            while (true) {
+                var loaded = false
+                instrumentation.runOnMainSync { loaded = !vm.loading }
+                if (loaded) break
+                delay(50)
+            }
+        }
+    }
+
 }

@@ -60,3 +60,16 @@ Android → Firebase Auth → Firestore SDK 트랜잭션 → Security Rules 구�
 - 운영 권한: `accountType`이 아니라 관리자 발급 Auth claim과 공간 `hostId`를 함께 검사합니다. 제공자 화면에서는 고객 취소·후기 버튼을 제공하지 않습니다.
 
 공간 등록은 현재 관리자 도구·콘솔에서 처리합니다. 앱 내 공간 등록 폼과 승인 심사 관리자 화면은 아직 제공하지 않습니다. 새 앱 사용 전에 변경된 Firestore 보안 규칙을 배포해야 `accountType`을 포함한 가입이 저장됩니다.
+
+## 로그인·앱 시작 시 PERMISSION_DENIED
+
+예약하지 않았는데 권한·선점·예약 상태 안내가 나왔다면 이전 앱의 공통 오류 문구입니다. 새 앱은 회원정보(`users`)와 공간 목록(`spaces`) 조회 거절을 구분합니다. 현재 규칙에서는 로그인한 본인의 프로필(아직 없는 문서 포함) 조회와 `active:true` 조건을 넣은 공간 조회를 허용합니다. 계정만 생성된 상태로 앱을 다시 열면 가입 완료 화면으로 복구합니다.
+
+실제 앱에서 계속 거절된다면 `google-services.json`의 프로젝트 ID와 배포 프로젝트가 같은지, Firestore `(default)` 데이터베이스에 저장소의 규칙이 배포됐는지 확인하세요. `.firebaserc` 기본값은 로컬 테스트용 `demo-teumgot`이므로 실제 배포에는 프로젝트를 명시합니다.
+
+```bash
+firebase/node_modules/.bin/firebase login
+firebase/node_modules/.bin/firebase deploy --project YOUR_PROJECT_ID --only firestore
+```
+
+Firebase 콘솔을 사용한다면 Firestore Database → 규칙에서 저장소 루트의 `firestore.rules` 전체 내용을 반영하고 게시합니다. 규칙을 모두 공개하는 방식으로 해결하지 않습니다. Firebase Auth에 이미 만들어진 계정은 삭제하거나 다시 가입할 필요 없이 로그인 후 가입 완료를 이어갑니다.

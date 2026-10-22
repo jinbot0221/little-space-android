@@ -61,6 +61,8 @@ fun Map<String, Any>.long(k: String) = (get(k) as? Number)?.toLong() ?: 0L
 
 fun Map<String, Any>.str(k: String) = get(k) as? String ?: ""
 
+class FirebaseReadDenied(val target: String, cause: Exception) : IllegalStateException(target, cause)
+
 class FirebaseRepository(context: Context) {
     companion object {
         private val emulatorApps = mutableSetOf<FirebaseApp>()
@@ -112,7 +114,12 @@ class FirebaseRepository(context: Context) {
             .whereEqualTo("active", true)
             .whereEqualTo("schemaVersion", 2)
         if (owned) query = query.whereEqualTo("hostId", checkNotNull(auth.currentUser).uid)
-        return query.limit(30).get().await().documents.map { spaceOf(it.data!!, it.id) }
+        return try {
+            query.limit(30).get().await().documents.map { spaceOf(it.data!!, it.id) }
+        } catch (e: com.google.firebase.firestore.FirebaseFirestoreException) {
+            if (e.code == com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED) throw FirebaseReadDenied("spaces", e)
+            throw e
+        }
     }
 
     suspend fun login(email: String, password: String) {
@@ -143,14 +150,18 @@ class FirebaseRepository(context: Context) {
             .await()
     }
 
-    suspend fun accountType(): String = auth.currentUser?.let {
-        db.document("users/${it.uid}").get().await().getString("accountType")
-    } ?: "customer"
+    private suspend fun profile() = auth.currentUser?.let {
+        try {
+            db.document("users/${it.uid}").get().await()
+        } catch (e: com.google.firebase.firestore.FirebaseFirestoreException) {
+            if (e.code == com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED) throw FirebaseReadDenied("users", e)
+            throw e
+        }
+    }
 
-    suspend fun hasProfile() =
-        auth.currentUser?.let {
-            db.document("users/${it.uid}").get().await().getBoolean("termsAccepted") == true
-        } ?: false
+    suspend fun accountType(): String = profile()?.getString("accountType") ?: "customer"
+
+    suspend fun hasProfile() = profile()?.getBoolean("termsAccepted") == true
 
     suspend fun reset(email: String) {
         auth.sendPasswordResetEmail(email).await()

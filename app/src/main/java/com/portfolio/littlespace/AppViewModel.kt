@@ -84,7 +84,7 @@ constructor(app: Application, private val screenshotSpaces: List<Space>? = null)
         return result
     }
 
-    private fun run(block: suspend () -> Unit) {
+    private fun run(operation: String = route, block: suspend () -> Unit) {
         if (loading) return
         loading = true
         error = null
@@ -92,7 +92,7 @@ constructor(app: Application, private val screenshotSpaces: List<Space>? = null)
             try {
                 block()
             } catch (e: Exception) {
-                error = errorText(e)
+                error = errorText(e, operation)
                 val code = (e as? SparkException)?.code
                 if (code == "HOLD_EXPIRED" && repo.pending() != null) {
                     repo.clearPending()
@@ -107,7 +107,12 @@ constructor(app: Application, private val screenshotSpaces: List<Space>? = null)
         }
     }
 
-    private fun errorText(e: Exception): String {
+    private fun errorText(e: Exception, operation: String): String {
+        if (e is FirebaseReadDenied) return if (e.target == "users") {
+            "회원정보 조회가 거절됐어요. Firebase에 최신 firestore.rules를 배포하고, 앱이 같은 프로젝트에 연결됐는지 확인해 주세요."
+        } else {
+            "공간 목록 조회가 거절됐어요. Firebase에 최신 firestore.rules를 배포하고, 앱이 같은 프로젝트에 연결됐는지 확인해 주세요."
+        }
         if (e is com.google.firebase.FirebaseNetworkException) return if (BuildConfig.USE_EMULATORS) {
             "개발용 Firebase 서버에 연결할 수 없어요. 실제 Firebase 설정 파일을 추가해 앱을 다시 빌드하거나 에뮬레이터 서버를 실행해 주세요."
         } else {
@@ -127,7 +132,15 @@ constructor(app: Application, private val screenshotSpaces: List<Space>? = null)
             e is FirebaseFirestoreException &&
                 e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED
         )
-            return "권한·선점·예약 상태가 변경됐어요. 최신 내역과 가능 시간을 확인해 주세요."
+            return when (operation) {
+                "회원가입", "가입 완료" -> "가입 정보 저장이 거절됐어요. Firebase에 최신 firestore.rules를 배포했는지 확인해 주세요. 계정이 이미 생성됐다면 다시 가입하지 않고 가입 완료를 이어갈 수 있어요."
+                "로그인", "회원정보 조회" -> "회원정보 조회가 거절됐어요. Firebase 프로젝트와 users 보안 규칙을 확인해 주세요."
+                "탐색", "검색 결과", "공간 조회" -> "공간 목록 조회가 거절됐어요. Firebase 프로젝트와 spaces 보안 규칙을 확인해 주세요."
+                "찜" -> "찜 정보 접근이 거절됐어요. 로그인 상태와 즐겨찾기 보안 규칙을 확인해 주세요."
+                "알림" -> "알림함 접근이 거절됐어요. 로그인 상태와 알림 보안 규칙을 확인해 주세요."
+                "운영 예약", "운영 시간 차단" -> "운영 권한이 없거나 예약 상태가 변경됐어요. 제공자 승인 상태와 본인 공간인지 확인해 주세요."
+                else -> "요청이 보안 규칙에 의해 거절됐어요. 최신 보안 규칙 배포와 로그인 상태를 확인하고, 예약 중이었다면 가능 시간을 다시 조회해 주세요."
+            }
         if (
             e is FirebaseFirestoreException &&
                 e.code == FirebaseFirestoreException.Code.RESOURCE_EXHAUSTED
@@ -186,10 +199,11 @@ constructor(app: Application, private val screenshotSpaces: List<Space>? = null)
         if (email == null) loginPrompt = true else action()
     }
 
-    fun refresh() = run {
+    fun refresh() = run("공간 조회") {
         if (email != null) {
             loadMemberType()
-            if (provider && route == "탐색") route = "운영 홈"
+            if (!repo.hasProfile()) route = "가입 완료"
+            else if (provider && route == "탐색") route = "운영 홈"
         }
         spaces = screenshotSpaces ?: repo.spaces(owned = provider)
         if (email != null && !provider) favorites = repo.favorites()
@@ -242,7 +256,7 @@ constructor(app: Application, private val screenshotSpaces: List<Space>? = null)
         route = if (backStack.isNotEmpty()) backStack.removeAt(backStack.lastIndex) else "탐색"
     }
 
-    fun login(mail: String, password: String) = run {
+    fun login(mail: String, password: String) = run("로그인") {
         repo.login(mail.trim(), password)
         email = repo.auth.currentUser?.email
         name = repo.auth.currentUser?.displayName
@@ -252,15 +266,24 @@ constructor(app: Application, private val screenshotSpaces: List<Space>? = null)
         hasRecovery = repo.pending() != null
     }
 
-    fun signup(mail: String, password: String, nickname: String, type: String = "customer") = run {
-        repo.signup(mail.trim(), password, nickname.trim(), type)
+    fun signup(mail: String, password: String, nickname: String, type: String = "customer") = run("회원가입") {
+        try {
+            repo.signup(mail.trim(), password, nickname.trim(), type)
+        } catch (e: Exception) {
+            if (repo.auth.currentUser != null) {
+                email = repo.auth.currentUser?.email
+                name = nickname
+                route = "가입 완료"
+            }
+            throw e
+        }
         email = repo.auth.currentUser?.email
         name = nickname
         loadMemberType()
         finishAuth()
     }
 
-    fun complete(nickname: String, type: String = "customer") = run {
+    fun complete(nickname: String, type: String = "customer") = run("가입 완료") {
         repo.completeProfile(nickname, type)
         name = nickname
         loadMemberType()

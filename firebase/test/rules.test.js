@@ -594,3 +594,15 @@ test("signup accepts customer and host intent without granting host privileges",
     nickname: "운영관리", termsAccepted: true, termsVersion: "1.0", privacyVersion: "1.0", accountType: "admin",
   }));
 });
+
+test("startup and login can read own legacy or missing profile and query active spaces", async () => {
+  const customer = db("u");
+  const legacy = await assertSucceeds(getDoc(ref(customer, "users/u")));
+  a.equal(legacy.data().accountType, undefined);
+  const incomplete = db("not-yet-profiled");
+  const missing = await assertSucceeds(getDoc(ref(incomplete, "users/not-yet-profiled")));
+  a.equal(missing.exists(), false);
+  const catalog = await assertSucceeds(getDocs(query(collection(customer, "spaces"), where("active", "==", true), where("schemaVersion", "==", 2), limit(30))));
+  a.equal(catalog.size, 1);
+  await assertFails(getDoc(ref(customer, "users/host")));
+});
