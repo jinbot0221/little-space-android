@@ -20,7 +20,7 @@
 - Firestore 트랜잭션과 보안 규칙에 의한 중복 예약 방지·요청 결과 복구
 - 서버 `request.time` 기준 선점 만료와 이용 24시간 전까지 취소
 - 완료 예약당 후기 1회, 확정·취소 앱 알림함
-- 소유 운영자의 예약 조회와 시간 차단·해제 (Admin custom claim 필요)
+- 소유 운영자의 예약 조회와 시간 차단·해제 (Firestore에서 `approved:true` 승인 필요)
 
 **제공하지 않는 기능:** 실제 과금·환불, 자동 FCM 발송·예약 알림·발송 워커, 사진 업로드/Cloud Storage, 휴대폰 SMS 인증, 외부 PG·카카오 custom-token 서버, 지도, 소셜 로그인. FCM 자체가 유료라서 제외한 것은 아닙니다. 자동 발송에 필요한 신뢰할 수 있는 서버를 이번 Spark 버전에서 운영하지 않습니다. 공간 사진은 외부 URL을 관리자가 등록합니다.
 
@@ -116,7 +116,7 @@ firebaseApiKey=YOUR_ANDROID_PUBLIC_API_KEY
 useEmulators=false
 ```
 
-4. 관리자가 공간과 운영일을 등록하고 운영자 계정에 custom claim을 지정합니다. [Spark 운영·전환 안내](docs/SPARK.md)를 따릅니다.
+4. 관리자가 공간과 운영일을 등록하고 Firestore의 제공자 프로필에서 boolean `approved:true`로 승인합니다. [Spark 운영·전환 안내](docs/SPARK.md)를 따릅니다.
 
 실제 프로젝트 ID는 `littlespace-a7087`입니다. Android 설정·Firebase 배포 인증이 제공되지 않아 라이브 배포는 하지 않았습니다. `app/google-services.json`에서 현재 Android 패키지에 맞는 설정을 읽어 `FirebaseOptions`에 적용합니다. 파일은 Git에서 제외됩니다. 기존 Functions 버전의 데이터는 자동 변환하지 않습니다. 원본을 삭제하지 않고 새 `spark*` 컬렉션을 사용합니다.
 
@@ -134,3 +134,5 @@ useEmulators=false
 ### 회원 유형
 
 회원가입 시 일반 이용자와 장소 제공자를 선택합니다. 이용자는 공간 탐색·찜·예약 중심, 제공자는 운영 홈·내 공간·고객 예약 중심으로 메뉴가 달라집니다. 제공자는 관리자 승인 전 대기 화면을 보며, 승인 후 본인 공간만 운영합니다. [승인 절차](docs/SPARK.md) · [회원 유형과 보안 규칙](docs/FIREBASE.md).
+
+장소 제공자 승인은 **Firebase 콘솔 → Firestore Database → users → 회원 UID → `approved`(boolean)를 `true`로 저장**하면 됩니다. 회원의 `accountType`은 `host`여야 합니다. 앱의 승인 상태 새로고침으로 반영되며, `approved:false`로 바꾸면 권한이 회수됩니다. 새 앱과 최신 보안 규칙을 함께 적용하세요.

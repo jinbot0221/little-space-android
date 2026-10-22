@@ -29,13 +29,19 @@ FCM 메시지 수신 자체가 유료라서 뺀 것이 아닙니다. 사용자 �
 node firebase/scripts/prepare-catalog.js --live --project YOUR_PROJECT_ID --host-uid YOUR_HOST_UID --days 30
 ```
 
-기존 공간의 `schemaVersion`이 2가 아니면 자동 변환하지 않고 중단합니다. 실제 상품 정보는 별도 관리 도구/콘솔에서 적합한 v2 스키마로 등록하세요. 운영자 UID는 Auth 계정에 실제로 존재해야 합니다. 운영자에게는 Admin SDK에서 기존 custom claims를 보존해 `host:true`를 추가해야 합니다. 가입 시 선택하는 `accountType:host`는 장소 제공 신청이며 운영 권한을 부여하지 않습니다. 관리자가 확인한 신청자만 아래 도구로 승인합니다.
+기존 공간의 `schemaVersion`이 2가 아니면 자동 변환하지 않고 중단합니다. 실제 상품 정보는 별도 관리 도구/콘솔에서 적합한 v2 스키마로 등록하세요.
 
-```bash
-node firebase/scripts/approve-host.js --live --project YOUR_PROJECT_ID --uid HOST_APPLICANT_UID
-```
+### Firebase 콘솔에서 장소 제공자 승인
 
-도구는 활성 Auth 계정·장소 제공자 신청·약관 동의를 확인하고 기존 custom claims를 보존합니다. 앱의 **승인 상태 새로고침**에서 새 토큰을 받아 운영 화면을 활성화합니다. 공간의 `hostId`는 승인한 UID로 별도 등록해야 하며 본인 공간만 운영할 수 있습니다.
+1. Firebase 콘솔에서 **littlespace-a7087 → Firestore Database → 데이터 → users → 해당 회원 UID**를 엽니다.
+2. `accountType`이 문자열 `host`이고 `termsAccepted`가 boolean `true`인지 확인합니다.
+3. **필드 추가**에서 이름 `approved`, 유형 **boolean**, 값 **true**로 저장합니다. 기존 `approved:false`가 있으면 값을 true로 수정합니다. 문자열 `"true"`는 승인으로 인정하지 않습니다.
+4. 회원이 앱의 **승인 상태 새로고침**을 누르면 운영 기능이 열립니다. 로그아웃·토큰 재발급 명령은 필요 없습니다.
+5. 관리할 `spaces/{공간ID}` 문서의 `hostId`를 해당 회원 UID로 지정합니다. 승인만으로 공간이 자동 생성되지는 않습니다.
+
+권한을 회수하려면 `approved`를 boolean `false`로 바꿉니다. 이후 서버 요청은 즉시 거절되고, 앱에서도 상태 새로고침/재실행 시 승인 대기로 돌아갑니다. 회원 본인은 앱/API에서 승인 값을 생성·변경·삭제할 수 없습니다. 신규 가입은 `approved:false`로 생성됩니다. 필드가 없는 기존 계정도 미승인으로 처리합니다.
+
+**최신 앱 설치와 Firestore 규칙 배포를 함께 적용해야 합니다.** 이전 `host:true` Custom Claim은 이제 운영 권한으로 사용하지 않습니다. 이전 운영자도 콘솔에서 `accountType:host`, `approved:true`를 설정하세요. `approve-host.js`는 대량 관리 시 선택적으로 사용할 수 있는 도구이며 이제 동일한 Firestore 승인 필드만 변경합니다. 일반적인 승인은 콘솔에서 처리하면 됩니다.
 
 시드와 카탈로그 준비는 서로 목적이 다릅니다. 전자는 테스트 계정·데이터를 로컬에 만들고, 후자는 명시한 라이브 프로젝트에 누락된 가상 카탈로그만 등록합니다. 라이브 관리 도구는 이 작업에서 실행하지 않았습니다.
 

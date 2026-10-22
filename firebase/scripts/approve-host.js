@@ -1,3 +1,4 @@
+// Optional bulk/admin alternative. Normal approval is editing approved=true in Firestore console.
 // Run only in a trusted admin environment; never bundle credentials with the app.
 const { initializeApp, applicationDefault } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
@@ -18,6 +19,13 @@ initializeApp({ credential: applicationDefault(), projectId: project });
   if (user.disabled || profile.get('accountType') !== 'host' || profile.get('termsAccepted') !== true) {
     throw Error('Only an enabled, registered host applicant can be approved');
   }
-  await getAuth().setCustomUserClaims(uid, { ...user.customClaims, host: true });
+  await getFirestore().runTransaction(async transaction => {
+    const reference = getFirestore().doc(`users/${uid}`);
+    const current = await transaction.get(reference);
+    if (current.get('accountType') !== 'host' || current.get('termsAccepted') !== true) {
+      throw Error('Host application changed; approval aborted');
+    }
+    transaction.update(reference, { approved: true });
+  });
   console.log('Host approved. The member can refresh approval status in the app.');
 })().catch(error => { console.error(error.message); process.exitCode = 1; });

@@ -283,6 +283,7 @@ beforeEach(async () => {
     for (const uid of ["u", "v", "host"])
       await setDoc(ref(client, `users/${uid}`), {
         nickname: "테스트",
+        ...(uid === "host" ? { accountType: "host", approved: true } : {}),
         termsAccepted: true,
         termsVersion: "1.0",
         privacyVersion: "1.0",
@@ -457,17 +458,17 @@ test("server cancellation deadline rejects within 24h", async () => {
 test("owner host can block/unblock but customers cannot", async () => {
   await assertFails(block(db()));
   await assertFails(block(db("other", { host: true })));
-  await assertSucceeds(block(db("host", { host: true })));
+  await assertSucceeds(block(db("host")));
   await assertFails(hold(db()));
-  await assertSucceeds(block(db("host", { host: true }), "op2", false));
+  await assertSucceeds(block(db("host"), "op2", false));
   await assertSucceeds(hold(db()));
 });
 test("host cannot block or remove booked inventory", async () => {
   const c = db();
   await hold(c);
   await confirm(c);
-  await assertFails(block(db("host", { host: true })));
-  await assertFails(block(db("host", { host: true }), "op2", false));
+  await assertFails(block(db("host")));
+  await assertFails(block(db("host"), "op2", false));
 });
 test("clock cannot be forged and roles cannot be self elevated", async () => {
   const c = db();
@@ -605,4 +606,46 @@ test("startup and login can read own legacy or missing profile and query active 
   const catalog = await assertSucceeds(getDocs(query(collection(customer, "spaces"), where("active", "==", true), where("schemaVersion", "==", 2), limit(30))));
   a.equal(catalog.size, 1);
   await assertFails(getDoc(ref(customer, "users/host")));
+});
+
+
+test("console approval controls host operations and booking reads; clients cannot approve themselves", async () => {
+  const applicant = db("host");
+  await admin(client => updateDoc(ref(client, "users/host"), { approved: false }));
+  await assertFails(block(applicant));
+  await assertFails(block(db("host", { host: true })));
+  await assertFails(updateDoc(ref(applicant, "users/host"), { approved: true }));
+  await assertFails(setDoc(ref(applicant, "users/host"), {
+    nickname: "자가승인", accountType: "host", approved: true, termsAccepted: true, termsVersion: "1.0", privacyVersion: "1.0",
+  }));
+  await assertFails(setDoc(ref(db("new-approved"), "users/new-approved"), {
+    nickname: "자가승인", accountType: "host", approved: true, termsAccepted: true, termsVersion: "1.0", privacyVersion: "1.0",
+  }));
+  await hold(db(), "h1", 26);
+  await confirm(db(), "h1", "confirm1");
+  await assertFails(getDoc(ref(applicant, "sparkBookings/h1")));
+  await assertFails(getDocs(query(collection(applicant, "sparkBookings"), where("hostId", "==", "host"), limit(30))));
+  await admin(client => updateDoc(ref(client, "users/host"), { approved: true }));
+  await assertSucceeds(getDoc(ref(applicant, "sparkBookings/h1")));
+  await assertSucceeds(getDocs(query(collection(applicant, "sparkBookings"), where("hostId", "==", "host"), limit(30))));
+  await assertSucceeds(block(applicant, "approved-block"));
+  await assertFails(updateDoc(ref(applicant, "users/host"), { approved: false }));
+  await admin(client => setDoc(ref(client, "users/other"), { accountType: "host", approved: true, termsAccepted: true }));
+  await assertFails(block(db("other")));
+  await assertFails(getDoc(ref(db("other"), "sparkBookings/h1")));
+  await admin(client => updateDoc(ref(client, "users/host"), { approved: false }));
+  await assertFails(getDoc(ref(applicant, "sparkBookings/h1")));
+  await assertFails(block(applicant, "revoked-block", false));
+});
+
+test("missing, non boolean, or customer approval never grants host access", async () => {
+  for (const profile of [
+    { accountType: "host" },
+    { accountType: "host", approved: "true" },
+    { accountType: "customer", approved: true },
+    { accountType: "host", approved: true, termsAccepted: false },
+  ]) {
+    await admin(client => setDoc(ref(client, "users/host"), { nickname: "제공회원", termsAccepted: true, ...profile }));
+    await assertFails(block(db("host", { host: true })));
+  }
 });

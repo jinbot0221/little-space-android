@@ -12,7 +12,7 @@ Android → Firebase Auth → Firestore SDK 트랜잭션 → Security Rules 구�
 | `sparkBookings/{holdId}` | 확정·취소 예약, 계약 스냅샷·버전·확정 요청 키 |
 | `sparkOperations/{requestKey}` | 운영 차단·해제 요청의 불변 결과 |
 | `sparkReviews/{bookingId}` | 완료된 본인 예약에 대한 후기 1회 |
-| `users/{uid}` | 본인의 닉네임·약관 동의·가입 유형(`accountType`); 권한 쓰기 금지 |
+| `users/{uid}` | 본인의 닉네임·약관 동의·가입 유형(`accountType`); 권한(`approved`) 변경 금지 |
 | `users/{uid}/clock/current` | 본인만 기록하는 서버 Timestamp 기준 시각 |
 | `users/{uid}/favorites/{spaceId}` | 본인 찜 |
 | `users/{uid}/notifications/{bookingId}_{version}` | 확정·취소와 원자적으로 생성하는 앱 알림함 |
@@ -28,7 +28,7 @@ Android → Firebase Auth → Firestore SDK 트랜잭션 → Security Rules 구�
 - 바꾼 슬롯 키가 선택한 2~16개 범위 안에만 있는지 검사합니다. 남는 슬롯·다른 예약을 변경할 수 없습니다.
 - 30분 경계, 1~8시간, 정원, 운영 시각, `dayStart` 기반 시작·종료, 관리자 가격·명칭·주소 스냅샷을 검사합니다.
 - `getAfter()`로 선점/예약/재고/앱 알림함의 변경이 **같은 커밋**에 들어왔는지 검사합니다. 문서 하나만 직접 쓰는 요청은 거절합니다.
-- 고객 UID는 인증 토큰에서 비교하고 운영 권한은 `host` custom claim과 공간 `hostId`를 모두 검사합니다.
+- 고객 UID는 인증 토큰에서 비교하고 운영 권한은 본인 프로필의 `accountType:host`·`approved:true`·약관 동의와 공간 `hostId`를 모두 검사합니다.
 - 사용자가 금액·서버 Timestamp·UID·예약 상태를 바꾸거나 권한을 높이는 쓰기는 거절합니다.
 
 16개 슬롯을 별도 문서로 읽지 않아 get() 한도를 피합니다. 비교식도 불필요한 인덱스 평가를 생략하도록 구성했습니다. 최대 8시간의 생성·확정·취소를 실제 Emulator에서 검사합니다.
@@ -53,13 +53,13 @@ Android → Firebase Auth → Firestore SDK 트랜잭션 → Security Rules 구�
 
 ## 회원 유형별 화면
 
-회원가입과 미완료 가입 화면에서 `customer`(일반 이용자) 또는 `host`(장소 제공자)를 선택합니다. `accountType`은 최초 생성 후 클라이언트가 변경할 수 없습니다. 기존 필드 없는 계정은 일반 이용자로 처리하되 신뢰할 수 있는 `host:true` claim이 있으면 기존 운영자 화면을 유지합니다.
+회원가입과 미완료 가입 화면에서 `customer`(일반 이용자) 또는 `host`(장소 제공자)를 선택합니다. `accountType`은 최초 생성 후 클라이언트가 변경할 수 없습니다. 유형 필드가 없는 기존 계정은 일반 이용자, 승인 필드가 없는 제공자는 승인 대기로 처리합니다.
 
 - 일반 이용자: 탐색 / 찜 / 예약내역 / 마이.
 - 장소 제공자: 운영 홈 / 내 공간 / 운영 예약 / 마이. 미승인 계정은 승인 대기 안내만 표시합니다.
-- 운영 권한: `accountType`이 아니라 관리자 발급 Auth claim과 공간 `hostId`를 함께 검사합니다. 제공자 화면에서는 고객 취소·후기 버튼을 제공하지 않습니다.
+- 운영 권한: 관리자가 Firestore 콘솔에서 설정한 boolean `approved:true`와 `accountType:host`, 약관 동의 및 공간 `hostId`를 함께 검사합니다. 기존 Auth custom claim은 권한으로 사용하지 않습니다. 제공자 화면에서는 고객 취소·후기 버튼을 제공하지 않습니다.
 
-공간 등록은 현재 관리자 도구·콘솔에서 처리합니다. 앱 내 공간 등록 폼과 승인 심사 관리자 화면은 아직 제공하지 않습니다. 새 앱 사용 전에 변경된 Firestore 보안 규칙을 배포해야 `accountType`을 포함한 가입이 저장됩니다.
+공간 등록은 현재 관리자 도구·콘솔에서 처리합니다. 앱 내 공간 등록 폼과 승인 심사 관리자 화면은 아직 제공하지 않습니다. 새 앱 사용 전에 변경된 Firestore 보안 규칙을 배포해야 `accountType`·`approved:false`를 포함한 가입이 저장됩니다.
 
 ## 로그인·앱 시작 시 PERMISSION_DENIED
 
@@ -75,3 +75,5 @@ firebase/node_modules/.bin/firebase deploy --project littlespace-a7087 --only fi
 Firebase 콘솔을 사용한다면 Firestore Database → 규칙에서 저장소 루트의 `firestore.rules` 전체 내용을 반영하고 게시합니다. 규칙을 모두 공개하는 방식으로 해결하지 않습니다. Firebase Auth에 이미 만들어진 계정은 삭제하거나 다시 가입할 필요 없이 로그인 후 가입 완료를 이어갑니다.
 
 실제 연결 대상 프로젝트는 `littlespace-a7087`입니다. `.firebaserc`의 `production` 별칭으로 등록했으며 로컬 테스트용 기본 프로젝트는 `demo-teumgot`을 유지합니다. 실제 Android 설정 파일도 `project_info.project_id`가 `littlespace-a7087`인 파일을 사용해야 합니다. 이 클라우드 환경에서는 Firestore API 접속이 프록시에서 차단되고 Firebase CLI 인증 계정도 없어 라이브 규칙 상태는 검증하지 못했습니다.
+
+제공자 승인 새로고침은 Firestore 서버에서 프로필을 다시 읽습니다. 이전 승인 캐시만으로 화면을 활성화하지 않습니다. [Firebase 콘솔 승인 단계](SPARK.md#firebase-콘솔에서-장소-제공자-승인)를 따르세요.

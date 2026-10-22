@@ -49,7 +49,7 @@ constructor(app: Application, private val screenshotSpaces: List<Space>? = null)
     var name by mutableStateOf(repo.auth.currentUser?.displayName)
     var accountType by mutableStateOf("customer")
         private set
-    val provider: Boolean get() = accountType == "host" || host
+    val provider: Boolean get() = accountType == "host"
     var host by mutableStateOf(false)
     var loginPrompt by mutableStateOf(false)
     var region by mutableStateOf("진주")
@@ -235,8 +235,10 @@ constructor(app: Application, private val screenshotSpaces: List<Space>? = null)
     }
 
     private suspend fun loadMemberType() {
-        host = repo.auth.currentUser?.getIdToken(true)?.awaitTokenHost() ?: false
-        accountType = repo.accountType()
+        val membership = repo.membership()
+        accountType = membership.accountType
+        host = membership.approved
+        if (!host && provider) bookings = emptyList()
     }
 
     fun refreshMemberType() = run {
@@ -491,6 +493,3 @@ constructor(app: Application, private val screenshotSpaces: List<Space>? = null)
     private fun maps(v: Any?) =
         (v as? List<*>)?.mapNotNull { it as? Map<String, Any> } ?: emptyList()
 }
-
-private suspend fun com.google.android.gms.tasks.Task<com.google.firebase.auth.GetTokenResult>
-    .awaitTokenHost() = this.await().claims["host"] == true

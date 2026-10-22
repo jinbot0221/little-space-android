@@ -4,7 +4,12 @@ service cloud.firestore {
     function signedIn() { return request.auth != null; }
     function self(uid) { return signedIn() && request.auth.uid == uid; }
     function accepted() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.termsAccepted == true; }
-    function host(spaceId) { return signedIn() && request.auth.token.get('host', false) == true && get(/databases/$(database)/documents/spaces/$(spaceId)).data.hostId == request.auth.uid; }
+    function approvedHost() {
+      return signedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('accountType','customer') == 'host'
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('approved',false) == true
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.termsAccepted == true;
+    }
+    function host(spaceId) { return approvedHost() && get(/databases/$(database)/documents/spaces/$(spaceId)).data.hostId == request.auth.uid; }
     function key(id) { return id is string && id.matches('[A-Za-z0-9-]{1,80}'); }
     function invAfter(id) { return getAfter(/databases/$(database)/documents/sparkInventory/$(id)).data; }
     function linked(invId, action, id, start, count) {
@@ -114,8 +119,8 @@ service cloud.firestore {
           : request.resource.data.status == 'confirmed' && resource.data.createdAt + duration.value(5,'m') > request.time && getAfter(/databases/$(database)/documents/sparkBookings/$(id)).data.holdId == id && linked(resource.data.inventoryId,'confirm',id,resource.data.startSlot,resource.data.slotCount));
     }
     match /sparkBookings/{id} {
-      allow get: if signedIn() && (!exists(/databases/$(database)/documents/sparkBookings/$(id)) || resource.data.userId == request.auth.uid || (request.auth.token.get('host',false) == true && resource.data.hostId == request.auth.uid));
-      allow list: if signedIn() && (resource.data.userId == request.auth.uid || (request.auth.token.get('host',false) == true && resource.data.hostId == request.auth.uid)) && request.query.limit <= 30;
+      allow get: if signedIn() && (!exists(/databases/$(database)/documents/sparkBookings/$(id)) || resource.data.userId == request.auth.uid || (approvedHost() && resource.data.hostId == request.auth.uid));
+      allow list: if signedIn() && (resource.data.userId == request.auth.uid || (approvedHost() && resource.data.hostId == request.auth.uid)) && request.query.limit <= 30;
       allow create: if signedIn() && validBooking(id) && inbox(request.resource.data,request.auth.uid) && inbox(request.resource.data,request.resource.data.hostId);
       allow update: if signedIn() && resource.data.userId == request.auth.uid && resource.data.status == 'confirmed'
         && resource.data.startAt - request.time >= duration.value(24,'h')
@@ -167,7 +172,7 @@ service cloud.firestore {
     }
     match /users/{uid} {
       allow read: if self(uid);
-      allow create: if self(uid) && request.resource.data.keys().hasOnly(['nickname','termsAccepted','termsVersion','privacyVersion','accountType']) && request.resource.data.get('accountType','customer') in ['customer','host'] && request.resource.data.nickname is string && request.resource.data.nickname.size() >= 2 && request.resource.data.nickname.size() <= 20 && request.resource.data.termsAccepted == true && request.resource.data.termsVersion == '1.0' && request.resource.data.privacyVersion == '1.0';
+      allow create: if self(uid) && request.resource.data.keys().hasOnly(['nickname','termsAccepted','termsVersion','privacyVersion','accountType','approved']) && request.resource.data.get('approved',false) == false && request.resource.data.get('accountType','customer') in ['customer','host'] && request.resource.data.nickname is string && request.resource.data.nickname.size() >= 2 && request.resource.data.nickname.size() <= 20 && request.resource.data.termsAccepted == true && request.resource.data.termsVersion == '1.0' && request.resource.data.privacyVersion == '1.0';
       allow update: if self(uid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname']) && request.resource.data.nickname is string && request.resource.data.nickname.size() >= 2 && request.resource.data.nickname.size() <= 20;
       match /clock/{id} { allow read: if self(uid); allow create,update: if self(uid) && id == 'current' && request.resource.data.keys().hasOnly(['at']) && request.resource.data.at == request.time; }
       match /favorites/{spaceId} { allow read,delete: if self(uid); allow create,update: if self(uid) && request.resource.data.keys().hasOnly(['spaceId']) && request.resource.data.spaceId == spaceId; }

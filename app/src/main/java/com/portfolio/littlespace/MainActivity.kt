@@ -747,6 +747,7 @@ fun ProviderHome(vm: AppViewModel) {
             Primary("고객 예약 관리", !vm.loading) { vm.hostBookings() }
             OutlinedButton(onClick = { vm.tab("내 공간") }, modifier = Modifier.fillMaxWidth()) { Text("내 공간 · 운영 시간 관리") }
             Text("예약 취소와 후기는 예약한 이용자가 진행해요.", color = Muted)
+            TextButton(onClick = { vm.refreshMemberType() }, enabled = !vm.loading) { Text("승인 상태 새로고침") }
         }
     }
 }

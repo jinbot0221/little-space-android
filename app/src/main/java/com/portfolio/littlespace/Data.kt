@@ -61,6 +61,8 @@ fun Map<String, Any>.long(k: String) = (get(k) as? Number)?.toLong() ?: 0L
 
 fun Map<String, Any>.str(k: String) = get(k) as? String ?: ""
 
+data class Membership(val accountType: String, val approved: Boolean)
+
 class FirebaseReadDenied(val target: String, cause: Exception) : IllegalStateException(target, cause)
 
 class FirebaseRepository(context: Context) {
@@ -139,6 +141,7 @@ class FirebaseRepository(context: Context) {
                 mapOf(
                     "nickname" to nickname,
                     "accountType" to accountType,
+                    "approved" to false,
                     "termsAccepted" to true,
                     "termsVersion" to "1.0",
                     "privacyVersion" to "1.0",
@@ -152,11 +155,17 @@ class FirebaseRepository(context: Context) {
 
     private suspend fun profile() = auth.currentUser?.let {
         try {
-            db.document("users/${it.uid}").get().await()
+            db.document("users/${it.uid}").get(com.google.firebase.firestore.Source.SERVER).await()
         } catch (e: com.google.firebase.firestore.FirebaseFirestoreException) {
             if (e.code == com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED) throw FirebaseReadDenied("users", e)
             throw e
         }
+    }
+
+    suspend fun membership(): Membership {
+        val document = profile()
+        val type = document?.getString("accountType") ?: "customer"
+        return Membership(type, type == "host" && document?.get("approved") == true && document.get("termsAccepted") == true)
     }
 
     suspend fun accountType(): String = profile()?.getString("accountType") ?: "customer"
