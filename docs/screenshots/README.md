@@ -37,3 +37,9 @@ python3 scripts/capture-screenshots.py --serial emulator-5554
 ```
 
 상태 표시줄·시스템 탐색바도 포함하므로 사용한 Android 기기에 따라 바의 모양과 해상도는 달라질 수 있습니다. 긴 화면은 최초 스크롤 위치의 실제 뷰포트를 촬영합니다. 전체 스크롤 내용을 하나로 합친 이미지는 아닙니다.
+
+## 제공자 공간 등록
+
+2026-10-22에 추가한 공간 등록 화면입니다. debug 전용 오프라인 화면 촬영용 상태로 표시한 전체 화면이며 실제 공간을 등록한 결과는 아닙니다. 긴 입력 화면의 첫 화면을 촬영했습니다.
+
+<a href="15-space-register.png"><img src="15-space-register.png" alt="제공자 공간 등록" width="240"></a>

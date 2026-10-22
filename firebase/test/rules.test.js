@@ -649,3 +649,58 @@ test("missing, non boolean, or customer approval never grants host access", asyn
     await assertFails(block(db("host", { host: true })));
   }
 });
+
+function registeredSpace(id = "new-space", patch = {}) {
+  return {
+    id, hostId: "host", name: "새 스터디룸", description: "집중하기 좋은 조용한 스터디 공간입니다.",
+    address: "경상남도 진주시 진주대로 100", region: "진주", type: "스터디룸", capacity: 6,
+    slotPrice: 5000, openMinute: 540, closeMinute: 1320, facilities: ["Wi-Fi"], rules: "실내 금연",
+    imageUrl: "", active: true, schemaVersion: 2, pricingMode: "flat", ...patch,
+  };
+}
+function registeredInventory(spaceId, ms, patch = {}) {
+  const date = new Date(ms + 9 * 3600000).toISOString().slice(0, 10);
+  return {
+    id: `${spaceId}_${date}`, spaceId, date, dayStart: at(ms),
+    slots: Object.fromEntries(Array.from({ length: 48 }, (_, n) => [String(n), { kind: "free" }])),
+    schemaVersion: 2, version: 0, updatedAt: serverTimestamp(), lastAction: "seed", lastId: "seed", lastStartSlot: 0, lastCount: 0, ...patch,
+  };
+}
+test("approved host atomically registers space and maximum 30 operating days", async () => {
+  const c = db("host"), batch = writeBatch(c);
+  batch.set(ref(c, "spaces/new-space"), registeredSpace());
+  const today = day - 3 * D;
+  for (let i = 0; i < 30; i++) {
+    const inventory = registeredInventory("new-space", today + i * D);
+    batch.set(ref(c, `sparkInventory/${inventory.id}`), inventory);
+  }
+  await assertSucceeds(batch.commit());
+  const guest = env.unauthenticatedContext().firestore();
+  a.equal((await read(guest, "spaces/new-space")).hostId, "host");
+  await assertFails(setDoc(ref(c, "spaces/new-space"), registeredSpace("new-space", { slotPrice: 1 })));
+});
+test("unapproved or foreign users cannot register spaces or forge catalog fields", async () => {
+  await assertFails(setDoc(ref(db(), "spaces/new-space"), registeredSpace()));
+  await admin(c => updateDoc(ref(c, "users/host"), { approved: false }));
+  await assertFails(setDoc(ref(db("host", { host: true }), "spaces/new-space"), registeredSpace()));
+  await admin(c => updateDoc(ref(c, "users/host"), { approved: true }));
+  for (const patch of [{ hostId: "u" }, { slotPrice: -1 }, { capacity: 101 }, { closeMinute: 550 }, { imageUrl: "http://image.test/photo.png" }, { schemaVersion: 1 }, { facilities: [42] }, { admin: true }]) {
+    await assertFails(setDoc(ref(db("host"), "spaces/new-space"), registeredSpace("new-space", patch)));
+  }
+});
+test("operating-day creation rejects forged days and occupied initial inventory", async () => {
+  const c = db("host");
+  await assertSucceeds(setDoc(ref(c, "spaces/new-space"), registeredSpace()));
+  for (const ms of [day - 4 * D, day + 27 * D, day + 1000]) {
+    const inv = registeredInventory("new-space", ms);
+    await assertFails(setDoc(ref(c, `sparkInventory/${inv.id}`), inv));
+  }
+  const bad = registeredInventory("new-space", day, { slots: { "0": { kind: "free" } } });
+  await assertFails(setDoc(ref(c, `sparkInventory/${bad.id}`), bad));
+  const wrongDate = registeredInventory("new-space", day, { date: "2099-01-01", id: "new-space_2099-01-01" });
+  await assertFails(setDoc(ref(c, `sparkInventory/${wrongDate.id}`), wrongDate));
+  const inv = registeredInventory("new-space", day);
+  await assertFails(setDoc(ref(db(), `sparkInventory/${inv.id}`), inv));
+  await assertSucceeds(setDoc(ref(c, `sparkInventory/${inv.id}`), inv));
+  await assertFails(setDoc(ref(c, `sparkInventory/${inv.id}`), inv));
+});

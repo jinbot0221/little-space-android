@@ -81,7 +81,7 @@ class MemberTypeTest {
             assertTrue(vm.host)
             assertTrue(vm.provider)
             assertEquals("운영 홈", vm.route)
-            assertEquals(3, vm.ownedSpaces().size)
+            assertTrue(vm.ownedSpaces().map { it.id }.containsAll(listOf("focus-a", "round-table", "slow-studio")))
             assertTrue(vm.spaces.all { it.hostId == repo.auth.currentUser!!.uid })
             vm.logout()
         }

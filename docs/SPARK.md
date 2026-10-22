@@ -29,7 +29,7 @@ FCM 메시지 수신 자체가 유료라서 뺀 것이 아닙니다. 사용자 �
 node firebase/scripts/prepare-catalog.js --live --project YOUR_PROJECT_ID --host-uid YOUR_HOST_UID --days 30
 ```
 
-기존 공간의 `schemaVersion`이 2가 아니면 자동 변환하지 않고 중단합니다. 실제 상품 정보는 별도 관리 도구/콘솔에서 적합한 v2 스키마로 등록하세요.
+기존 공간의 `schemaVersion`이 2가 아니면 자동 변환하지 않고 중단합니다. 실제 공간은 승인된 제공자가 앱의 운영 홈/내 공간 → 새 공간 등록에서 등록할 수 있습니다. 기존 공간의 관리자 등록도 유지합니다.
 
 ### Firebase 콘솔에서 장소 제공자 승인
 
@@ -37,7 +37,7 @@ node firebase/scripts/prepare-catalog.js --live --project YOUR_PROJECT_ID --host
 2. `accountType`이 문자열 `host`이고 `termsAccepted`가 boolean `true`인지 확인합니다.
 3. **필드 추가**에서 이름 `approved`, 유형 **boolean**, 값 **true**로 저장합니다. 기존 `approved:false`가 있으면 값을 true로 수정합니다. 문자열 `"true"`는 승인으로 인정하지 않습니다.
 4. 회원이 앱의 **승인 상태 새로고침**을 누르면 운영 기능이 열립니다. 로그아웃·토큰 재발급 명령은 필요 없습니다.
-5. 관리할 `spaces/{공간ID}` 문서의 `hostId`를 해당 회원 UID로 지정합니다. 승인만으로 공간이 자동 생성되지는 않습니다.
+5. 승인된 회원은 앱에서 새 공간을 등록합니다. 등록 시 `hostId`는 로그인 UID로 자동 지정됩니다. 기존에 관리자가 만든 공간만 해당 문서의 `hostId`를 회원 UID로 연결하세요.
 
 권한을 회수하려면 `approved`를 boolean `false`로 바꿉니다. 이후 서버 요청은 즉시 거절되고, 앱에서도 상태 새로고침/재실행 시 승인 대기로 돌아갑니다. 회원 본인은 앱/API에서 승인 값을 생성·변경·삭제할 수 없습니다. 신규 가입은 `approved:false`로 생성됩니다. 필드가 없는 기존 계정도 미승인으로 처리합니다.
 
@@ -59,3 +59,29 @@ node firebase/scripts/prepare-catalog.js --live --project YOUR_PROJECT_ID --host
 - [Cloud Storage 요금제 변경](https://firebase.google.com/docs/storage/faqs-storage-changes-announced-sept-2024)
 
 현재 클라우드에서는 Firebase 문서·기본 JAR 배포 호스트가 403을 반환했습니다. 실제 규칙 검증은 Google 공식 Cloud SDK의 Firestore Emulator 1.22.0 배포본을 SHA-256 검증 후 원래 launcher로 실행했습니다. `scripts/install-firestore-emulator.sh`에서 출처·핀·체크섬을 확인할 수 있습니다. TLS/체크섬 검증을 끄거나 JAR를 수정하지 않았습니다.
+
+## 제공자 공간 등록과 운영일
+
+승인된 제공자는 **운영 홈 또는 내 공간 → 새 공간 등록**에서 공간명·소개·진주 상세주소·유형·정원·30분 고정요금·운영 시간·편의시설·이용 수칙·선택 사진 URL을 입력합니다. 사진 업로드 대신 HTTPS URL을 사용합니다. 공간과 최초 연속 운영일(기본 내일부터 7일)을 하나의 트랜잭션으로 생성하며 공간은 일반회원의 탐색에 공개됩니다.
+
+운영일은 서버 기준 오늘부터 30일 범위 안에서만 생성합니다. 날짜별 48개 슬롯은 빈 상태로 초기화하고, 기존 재고 문서를 덮어쓰거나 예약을 삭제하는 초기화는 허용하지 않습니다. **내 공간 → 예약 가능한 날짜 추가**는 누락된 날짜만 추가하고 기존 예약·선점·차단은 그대로 둡니다. 제공자의 공간 수정·삭제와 사진 업로드는 이번 범위에 포함하지 않았습니다.
+
+## 인덱스 오류 처리
+
+`The query requires an index`는 실제 프로젝트에 해당 복합 인덱스가 없거나 생성 중임을 뜻합니다. 저장소의 `firestore.indexes.json`에 필요한 인덱스를 정의했습니다. 로그인한 관리자 환경에서 프로젝트 폴더 기준으로 다음을 실행합니다.
+
+```bash
+firebase/node_modules/.bin/firebase deploy --project littlespace-a7087 --only firestore
+```
+
+이번 변경은 규칙과 인덱스를 모두 게시해야 합니다. 콘솔의 Firestore Database → 인덱스에서 **사용 설정됨(Enabled)**이 될 때까지 기다린 뒤 다시 조회합니다. 오류 메시지의 생성 링크로 해당 인덱스를 만들어도 됩니다.
+
+| 조회 | 컬렉션 | 필드 |
+| --- | --- | --- |
+| 공개 공간 | spaces | active 오름차순, schemaVersion 오름차순 |
+| 제공자 내 공간 | spaces | hostId 오름차순, active 오름차순, schemaVersion 오름차순 |
+| 고객 예약 | sparkBookings | userId 오름차순, createdAt 내림차순 |
+| 제공자 예약 | sparkBookings | hostId 오름차순, createdAt 내림차순 |
+| 공간 후기 | sparkReviews | spaceId 오름차순, createdAt 내림차순 |
+
+앱 알림은 createdAt 단일 필드 범위·정렬이며 기본 단일 필드 인덱스를 사용합니다. Emulator는 실제 운영의 복합 인덱스 필요 여부를 강제하지 않으므로 로컬 테스트 통과가 라이브 인덱스 배포 완료를 의미하지 않습니다.

@@ -6,7 +6,7 @@ Android → Firebase Auth → Firestore SDK 트랜잭션 → Security Rules 구�
 
 | 경로 | 용도 |
 | --- | --- |
-| `spaces/{spaceId}` | 공개 공간·정원·운영 시각·고정단가, `schemaVersion:2`, `pricingMode:flat` / 관리자 등록 |
+| `spaces/{spaceId}` | 공개 공간·정원·운영 시각·고정단가, `schemaVersion:2`, `pricingMode:flat` / 승인 제공자 앱 등록 / 관리자 등록 |
 | `sparkInventory/{spaceId}_{KST-date}` | 48개 30분 슬롯·운영일 UTC Timestamp·버전·마지막 원자적 작업 |
 | `sparkHolds/{requestKey}` | 고객별 5분 선점·계약 스냅샷·생성 서버 Timestamp |
 | `sparkBookings/{holdId}` | 확정·취소 예약, 계약 스냅샷·버전·확정 요청 키 |
@@ -59,7 +59,7 @@ Android → Firebase Auth → Firestore SDK 트랜잭션 → Security Rules 구�
 - 장소 제공자: 운영 홈 / 내 공간 / 운영 예약 / 마이. 미승인 계정은 승인 대기 안내만 표시합니다.
 - 운영 권한: 관리자가 Firestore 콘솔에서 설정한 boolean `approved:true`와 `accountType:host`, 약관 동의 및 공간 `hostId`를 함께 검사합니다. 기존 Auth custom claim은 권한으로 사용하지 않습니다. 제공자 화면에서는 고객 취소·후기 버튼을 제공하지 않습니다.
 
-공간 등록은 현재 관리자 도구·콘솔에서 처리합니다. 앱 내 공간 등록 폼과 승인 심사 관리자 화면은 아직 제공하지 않습니다. 새 앱 사용 전에 변경된 Firestore 보안 규칙을 배포해야 `accountType`·`approved:false`를 포함한 가입이 저장됩니다.
+공간 등록은 승인된 제공자가 앱의 새 공간 등록 화면에서 처리합니다. 공간 수정·삭제 및 승인 심사 관리자 화면은 아직 제공하지 않습니다. 새 앱 사용 전에 변경된 Firestore 보안 규칙을 배포해야 `accountType`·`approved:false`를 포함한 가입이 저장됩니다.
 
 ## 로그인·앱 시작 시 PERMISSION_DENIED
 
@@ -77,3 +77,7 @@ Firebase 콘솔을 사용한다면 Firestore Database → 규칙에서 저장소
 실제 연결 대상 프로젝트는 `littlespace-a7087`입니다. `.firebaserc`의 `production` 별칭으로 등록했으며 로컬 테스트용 기본 프로젝트는 `demo-teumgot`을 유지합니다. 실제 Android 설정 파일도 `project_info.project_id`가 `littlespace-a7087`인 파일을 사용해야 합니다. 이 클라우드 환경에서는 Firestore API 접속이 프록시에서 차단되고 Firebase CLI 인증 계정도 없어 라이브 규칙 상태는 검증하지 못했습니다.
 
 제공자 승인 새로고침은 Firestore 서버에서 프로필을 다시 읽습니다. 이전 승인 캐시만으로 화면을 활성화하지 않습니다. [Firebase 콘솔 승인 단계](SPARK.md#firebase-콘솔에서-장소-제공자-승인)를 따르세요.
+
+## 공간·운영일 생성 권한
+
+`spaces` 생성은 승인된 제공자만 가능하며 소유 UID·공개 여부·v2 스키마·30분 요금·정원·운영 시간·문자열 길이·시설·HTTPS 이미지 주소를 검증합니다. 클라이언트의 기존 공간 수정/삭제는 허용하지 않습니다. `sparkInventory` 생성은 `getAfter()`의 공간 소유자와 승인 상태를 확인하고 KST 날짜/문서 ID/오늘부터 30일 범위/48개 빈 슬롯/버전 0/서버 timestamp를 검증합니다. 신규 공간과 운영일을 같은 트랜잭션에 생성할 수 있습니다. 기존 재고의 변경에는 계속 선점·확정·취소·운영 차단 규칙이 적용됩니다.

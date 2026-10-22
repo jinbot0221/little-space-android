@@ -6,7 +6,7 @@
 
 ## 앱 화면
 
-[전체 화면 스크린샷 14장](docs/screenshots/README.md) — 기존 0.1 버전의 debug 가상 데이터 촬영입니다. Spark 전환은 데이터 처리 구조를 바꾸며 화면의 주요 흐름은 유지합니다.
+[전체 화면 스크린샷 15장](docs/screenshots/README.md) — debug 가상 데이터 촬영입니다. 회원가입(09)·제공자 공간 등록(15)은 현재 화면이며 나머지는 초기 버전 화면입니다. 실제 서버 검증 결과는 검증 기록을 참고하세요.
 
 | 탐색 | 공간 상세 | 예약 확인 |
 | --- | --- | --- |
@@ -116,7 +116,7 @@ firebaseApiKey=YOUR_ANDROID_PUBLIC_API_KEY
 useEmulators=false
 ```
 
-4. 관리자가 공간과 운영일을 등록하고 Firestore의 제공자 프로필에서 boolean `approved:true`로 승인합니다. [Spark 운영·전환 안내](docs/SPARK.md)를 따릅니다.
+4. 관리자가 Firestore의 제공자 프로필에서 boolean `approved:true`로 승인하면 제공자가 앱에서 공간과 운영일을 등록합니다. [Spark 운영·전환 안내](docs/SPARK.md)를 따릅니다.
 
 실제 프로젝트 ID는 `littlespace-a7087`입니다. Android 설정·Firebase 배포 인증이 제공되지 않아 라이브 배포는 하지 않았습니다. `app/google-services.json`에서 현재 Android 패키지에 맞는 설정을 읽어 `FirebaseOptions`에 적용합니다. 파일은 Git에서 제외됩니다. 기존 Functions 버전의 데이터는 자동 변환하지 않습니다. 원본을 삭제하지 않고 새 `spark*` 컬렉션을 사용합니다.
 
@@ -136,3 +136,5 @@ useEmulators=false
 회원가입 시 일반 이용자와 장소 제공자를 선택합니다. 이용자는 공간 탐색·찜·예약 중심, 제공자는 운영 홈·내 공간·고객 예약 중심으로 메뉴가 달라집니다. 제공자는 관리자 승인 전 대기 화면을 보며, 승인 후 본인 공간만 운영합니다. [승인 절차](docs/SPARK.md) · [회원 유형과 보안 규칙](docs/FIREBASE.md).
 
 장소 제공자 승인은 **Firebase 콘솔 → Firestore Database → users → 회원 UID → `approved`(boolean)를 `true`로 저장**하면 됩니다. 회원의 `accountType`은 `host`여야 합니다. 앱의 승인 상태 새로고침으로 반영되며, `approved:false`로 바꾸면 권한이 회수됩니다. 새 앱과 최신 보안 규칙을 함께 적용하세요.
+
+승인된 제공자는 **운영 홈/내 공간 → 새 공간 등록**에서 공간과 예약 가능한 날짜를 등록할 수 있습니다. 기존 공간에는 **예약 가능한 날짜 추가**로 운영일을 확장합니다. `The query requires an index` 오류는 [인덱스 배포 안내](docs/SPARK.md#인덱스-오류-처리)에 따라 규칙·인덱스를 게시하고 인덱스가 Enabled가 된 후 다시 조회하세요.

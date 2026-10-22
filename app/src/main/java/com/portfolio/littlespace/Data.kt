@@ -111,6 +111,8 @@ class FirebaseRepository(context: Context) {
             }
         }
 
+    suspend fun serverNow() = spark.serverNow()
+
     suspend fun spaces(owned: Boolean = false): List<Space> {
         var query: Query = db.collection("spaces")
             .whereEqualTo("active", true)

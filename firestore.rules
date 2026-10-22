@@ -94,8 +94,42 @@ service cloud.firestore {
       let n = getAfter(/databases/$(database)/documents/users/$(uid)/notifications/$(b.id + '_' + string(b.version))).data;
       return n.bookingId == b.id && n.version == b.version && n.status == b.status && n.createdAt == request.time;
     }
-    match /spaces/{id} { allow read: if resource.data.active == true; allow write: if false; }
+    function validSpace(id) {
+      let s = request.resource.data;
+      return approvedHost() && key(id) && s.keys().hasAll(['id','hostId','name','description','address','region','type','capacity','slotPrice','openMinute','closeMinute','facilities','rules','imageUrl','active','schemaVersion','pricingMode'])
+        && s.keys().hasOnly(['id','hostId','name','description','address','region','type','capacity','slotPrice','openMinute','closeMinute','facilities','rules','imageUrl','active','schemaVersion','pricingMode'])
+        && s.id == id && s.hostId == request.auth.uid && s.active == true && s.schemaVersion == 2 && s.pricingMode == 'flat'
+        && s.name is string && s.name.size() >= 2 && s.name.size() <= 60 && s.description is string && s.description.size() >= 10 && s.description.size() <= 1000
+        && s.address is string && s.address.size() >= 5 && s.address.size() <= 200 && s.address.matches('.*진주.*') && s.region == '진주'
+        && s.type in ['스터디룸','회의실','촬영 스튜디오'] && s.capacity is int && s.capacity >= 1 && s.capacity <= 100
+        && s.slotPrice is int && s.slotPrice >= 1 && s.slotPrice <= 1000000
+        && s.openMinute is int && s.closeMinute is int && s.openMinute >= 0 && s.closeMinute <= 1440
+        && s.openMinute % 30 == 0 && s.closeMinute % 30 == 0 && s.closeMinute - s.openMinute >= 60
+        && s.facilities is list && s.facilities.size() <= 10 && s.facilities.hasOnly(['Wi-Fi','화이트보드','콘센트','프로젝터','자연광','촬영 장비','주차','냉난방'])
+        && s.rules is string && s.rules.size() <= 1000 && s.imageUrl is string && s.imageUrl.size() <= 2048 && (s.imageUrl == '' || s.imageUrl.matches('https://[^\\s]+'));
+    }
+    function pad(n) { return n < 10 ? '0' + string(n) : string(n); }
+    function newInventory(id) {
+      let d = request.resource.data;
+      let s = getAfter(/databases/$(database)/documents/spaces/$(d.spaceId)).data;
+      let kst = d.dayStart + duration.value(9,'h');
+      let today = (request.time + duration.value(9,'h')).date() - duration.value(9,'h');
+      return approvedHost() && s.hostId == request.auth.uid && s.active == true && s.schemaVersion == 2
+        && d.keys().hasAll(['id','spaceId','date','dayStart','slots','schemaVersion','version','updatedAt','lastAction','lastId','lastStartSlot','lastCount'])
+        && d.keys().hasOnly(['id','spaceId','date','dayStart','slots','schemaVersion','version','updatedAt','lastAction','lastId','lastStartSlot','lastCount'])
+        && d.id == id && id == d.spaceId + '_' + d.date && d.schemaVersion == 2 && d.version == 0
+        && d.dayStart is timestamp && kst == kst.date() && d.dayStart >= today && d.dayStart < today + duration.value(30,'d')
+        && d.date == string(kst.year()) + '-' + pad(kst.month()) + '-' + pad(kst.day())
+        && d.updatedAt == request.time && d.lastAction == 'seed' && d.lastId == 'seed' && d.lastStartSlot == 0 && d.lastCount == 0
+        && d.slots == {'0':{'kind':'free'},'1':{'kind':'free'},'2':{'kind':'free'},'3':{'kind':'free'},'4':{'kind':'free'},'5':{'kind':'free'},'6':{'kind':'free'},'7':{'kind':'free'},'8':{'kind':'free'},'9':{'kind':'free'},'10':{'kind':'free'},'11':{'kind':'free'},'12':{'kind':'free'},'13':{'kind':'free'},'14':{'kind':'free'},'15':{'kind':'free'},'16':{'kind':'free'},'17':{'kind':'free'},'18':{'kind':'free'},'19':{'kind':'free'},'20':{'kind':'free'},'21':{'kind':'free'},'22':{'kind':'free'},'23':{'kind':'free'},'24':{'kind':'free'},'25':{'kind':'free'},'26':{'kind':'free'},'27':{'kind':'free'},'28':{'kind':'free'},'29':{'kind':'free'},'30':{'kind':'free'},'31':{'kind':'free'},'32':{'kind':'free'},'33':{'kind':'free'},'34':{'kind':'free'},'35':{'kind':'free'},'36':{'kind':'free'},'37':{'kind':'free'},'38':{'kind':'free'},'39':{'kind':'free'},'40':{'kind':'free'},'41':{'kind':'free'},'42':{'kind':'free'},'43':{'kind':'free'},'44':{'kind':'free'},'45':{'kind':'free'},'46':{'kind':'free'},'47':{'kind':'free'}};
+    }
+    match /spaces/{id} {
+      allow get: if !exists(/databases/$(database)/documents/spaces/$(id)) || resource.data.active == true;
+      allow list: if resource.data.active == true;
+      allow create: if validSpace(id);
+    }
     match /sparkInventory/{id} {
+      allow create: if newInventory(id);
       allow get: if !exists(/databases/$(database)/documents/sparkInventory/$(id)) || get(/databases/$(database)/documents/spaces/$(resource.data.spaceId)).data.active == true;
       allow update: if signedIn() && resource.data.schemaVersion == 2 && resource.data.id == id
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['slots','version','updatedAt','lastAction','lastId','lastStartSlot','lastCount'])

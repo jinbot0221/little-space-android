@@ -7,7 +7,7 @@ import time
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
-SCREENS = ('home', 'search', 'detail', 'time', 'favorites', 'bookings', 'my', 'login', 'signup', 'reset', 'confirm', 'booking', 'cancel', 'review')
+SCREENS = ('home', 'search', 'detail', 'time', 'favorites', 'bookings', 'my', 'login', 'signup', 'reset', 'confirm', 'booking', 'cancel', 'review', 'space-register')
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--serial', required=True, help='Dedicated Android emulator serial')
 parser.add_argument('--skip-install', action='store_true')

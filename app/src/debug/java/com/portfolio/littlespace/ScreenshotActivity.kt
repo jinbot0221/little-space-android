@@ -91,12 +91,17 @@ class ScreenshotActivity : ComponentActivity() {
                 "my" to "마이",
                 "login" to "로그인",
                 "signup" to "회원가입",
+                "space-register" to "공간 등록",
                 "reset" to "비밀번호 찾기",
                 "confirm" to "예약 확인",
                 "booking" to "예약 상세",
                 "cancel" to "예약 취소",
                 "review" to "후기 작성",
             )
+        if (intent.getStringExtra("screen") == "space-register") {
+            model.host = true // Offline visual fixture only; server permission is never changed.
+            model.name = "테스트 제공자"
+        }
         model.go(routes[intent.getStringExtra("screen")] ?: "탐색")
         setContent {
             MaterialTheme(

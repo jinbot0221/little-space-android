@@ -127,6 +127,9 @@ constructor(app: Application, private val screenshotSpaces: List<Space>? = null)
             "ERROR_TOO_MANY_REQUESTS" -> "요청이 너무 많아요. 잠시 후 다시 시도해 주세요."
             else -> "인증에 실패했어요 (${e.errorCode}). Firebase 앱 설정을 확인해 주세요."
         }
+        if (e is FirebaseFirestoreException && e.code == FirebaseFirestoreException.Code.FAILED_PRECONDITION && e.message.orEmpty().contains("index", ignoreCase = true)) {
+            return "이 조회에 필요한 Firebase 인덱스가 없거나 생성 중이에요. 관리자가 인덱스를 배포한 뒤 '사용 설정됨'이 되면 다시 조회해 주세요."
+        }
         if (e is TimeoutCancellationException) return "연결이 지연되고 있어요. 미확정 예약은 같은 요청으로 결과를 확인해 주세요."
         if (
             e is FirebaseFirestoreException &&
@@ -138,7 +141,7 @@ constructor(app: Application, private val screenshotSpaces: List<Space>? = null)
                 "탐색", "검색 결과", "공간 조회" -> "공간 목록 조회가 거절됐어요. Firebase 프로젝트와 spaces 보안 규칙을 확인해 주세요."
                 "찜" -> "찜 정보 접근이 거절됐어요. 로그인 상태와 즐겨찾기 보안 규칙을 확인해 주세요."
                 "알림" -> "알림함 접근이 거절됐어요. 로그인 상태와 알림 보안 규칙을 확인해 주세요."
-                "운영 예약", "운영 시간 차단" -> "운영 권한이 없거나 예약 상태가 변경됐어요. 제공자 승인 상태와 본인 공간인지 확인해 주세요."
+                "운영 예약", "운영 시간 차단", "공간 등록", "운영일 등록" -> "운영 권한이 없거나 예약 상태가 변경됐어요. 제공자 승인 상태와 본인 공간인지 확인해 주세요."
                 else -> "요청이 보안 규칙에 의해 거절됐어요. 최신 보안 규칙 배포와 로그인 상태를 확인하고, 예약 중이었다면 가능 시간을 다시 조회해 주세요."
             }
         if (
@@ -471,6 +474,21 @@ constructor(app: Application, private val screenshotSpaces: List<Space>? = null)
 
     fun hostBookings() {
         tab("운영 예약")
+    }
+
+    fun registerSpace(draft: SpaceDraft, firstDate: LocalDate, days: Int) = run("공간 등록") {
+        val id = repo.registerSpace(draft, firstDate, days)
+        spaces = repo.spaces(owned = true)
+        selected = spaces.find { it.id == id }
+        tab("내 공간")
+        message = "공간과 운영일을 등록했어요. 일반회원이 예약할 수 있어요."
+    }
+
+    fun addOperatingDays(firstDate: LocalDate, days: Int) = run("운영일 등록") {
+        val space = checkNotNull(selected)
+        val count = repo.addOperatingDays(space.id, firstDate, days)
+        tab("내 공간")
+        message = "운영일 ${count}일을 추가했어요. 기존 예약과 운영일은 그대로 유지돼요."
     }
 
     fun ownedSpaces() = spaces.filter { it.hostId == repo.auth.currentUser?.uid }

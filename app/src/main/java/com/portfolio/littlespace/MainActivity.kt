@@ -139,6 +139,8 @@ fun TeumgotApp(vm: AppViewModel = viewModel()) {
                     else if (vm.route == "운영 예약" && !vm.host) ProviderHome(vm) else Bookings(vm)
                 "운영 홈" -> ProviderHome(vm)
                 "내 공간" -> ProviderSpaces(vm)
+                "공간 등록" -> SpaceRegistrationForm(vm)
+                "운영일 등록" -> OperatingDaysForm(vm)
                 "마이" -> MyPage(vm)
                 "로그인",
                 "회원가입",
@@ -744,6 +746,7 @@ fun ProviderHome(vm: AppViewModel) {
             Primary("승인 상태 새로고침", !vm.loading) { vm.refreshMemberType() }
         } else {
             Text("관리 중인 공간 ${vm.ownedSpaces().size}곳", style = MaterialTheme.typography.headlineSmall)
+            Primary("새 공간 등록", !vm.loading) { vm.go("공간 등록") }
             Primary("고객 예약 관리", !vm.loading) { vm.hostBookings() }
             OutlinedButton(onClick = { vm.tab("내 공간") }, modifier = Modifier.fillMaxWidth()) { Text("내 공간 · 운영 시간 관리") }
             Text("예약 취소와 후기는 예약한 이용자가 진행해요.", color = Muted)
@@ -759,15 +762,19 @@ fun ProviderSpaces(vm: AppViewModel) {
         return
     }
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        item { Title("내 공간", "공간별 운영 시간을 설정해요") }
+        item {
+            Title("내 공간", "공간별 운영 시간과 예약 가능한 날짜를 관리해요")
+            Primary("새 공간 등록", !vm.loading) { vm.go("공간 등록") }
+        }
         if (vm.ownedSpaces().isEmpty()) item {
-            Text("아직 연결된 공간이 없어요. 관리자에게 가입 이메일과 공간 정보를 전달해 등록을 요청해 주세요.")
+            Text("아직 등록한 공간이 없어요. 위의 새 공간 등록으로 첫 공간을 추가해 보세요.")
         }
         items(vm.ownedSpaces(), key = { it.id }) { space ->
             Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(space.name, style = MaterialTheme.typography.titleLarge)
                     Text(space.address, color = Muted)
+                    OutlinedButton(onClick = { vm.selected = space; vm.go("운영일 등록") }, enabled = !vm.loading, modifier = Modifier.fillMaxWidth()) { Text("예약 가능한 날짜 추가") }
                     Primary("운영 시간 설정", !vm.loading) {
                         vm.selected = space
                         vm.go("운영 시간 차단")
