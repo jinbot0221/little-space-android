@@ -105,6 +105,20 @@ constructor(app: Application, private val screenshotSpaces: List<Space>? = null)
     }
 
     private fun errorText(e: Exception): String {
+        if (e is com.google.firebase.FirebaseNetworkException) return if (BuildConfig.USE_EMULATORS) {
+            "개발용 Firebase 서버에 연결할 수 없어요. 실제 Firebase 설정 파일을 추가해 앱을 다시 빌드하거나 에뮬레이터 서버를 실행해 주세요."
+        } else {
+            "Firebase에 연결할 수 없어요. 인터넷 연결과 VPN·방화벽 설정을 확인하고 다시 시도해 주세요."
+        }
+        if (e is com.google.firebase.auth.FirebaseAuthException) return when (e.errorCode) {
+            "ERROR_OPERATION_NOT_ALLOWED" -> "Firebase Authentication에서 이메일/비밀번호 로그인을 활성화해 주세요."
+            "ERROR_EMAIL_ALREADY_IN_USE" -> "이미 가입된 이메일이에요. 로그인해 주세요."
+            "ERROR_INVALID_EMAIL" -> "올바른 이메일 주소를 입력해 주세요."
+            "ERROR_WEAK_PASSWORD" -> "비밀번호를 6자 이상으로 입력해 주세요."
+            "ERROR_INVALID_CREDENTIAL", "ERROR_WRONG_PASSWORD", "ERROR_USER_NOT_FOUND" -> "이메일 또는 비밀번호를 확인해 주세요."
+            "ERROR_TOO_MANY_REQUESTS" -> "요청이 너무 많아요. 잠시 후 다시 시도해 주세요."
+            else -> "인증에 실패했어요 (${e.errorCode}). Firebase 앱 설정을 확인해 주세요."
+        }
         if (e is TimeoutCancellationException) return "연결이 지연되고 있어요. 미확정 예약은 같은 요청으로 결과를 확인해 주세요."
         if (
             e is FirebaseFirestoreException &&

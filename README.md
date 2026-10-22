@@ -2,7 +2,7 @@
 
 필요한 시간만큼 공간을 찾고 예약하는 Android 포트폴리오 앱입니다. **Firebase Spark(무료) 기준으로 Auth + Cloud Firestore만 사용**합니다. Cloud Functions·Cloud Run·Cloud Storage·실제 결제 서버는 배포하지 않습니다.
 
-프로젝트명 `com.포트폴리오.littlespace` · 앱 ID `com.portfolio.littlespace` · 표시 이름 **틈곳** · Android API 26 이상.
+프로젝트명 `com.portfolio.littlespace` · 앱 ID `com.portfolio.littlespace` · 표시 이름 **틈곳** · Android API 26 이상.
 
 ## 앱 화면
 
@@ -107,7 +107,7 @@ Android SDK 경로와 실제 Auth 연동까지 확인하는 테스트도 포함�
 firebase/node_modules/.bin/firebase deploy --project YOUR_PROJECT_ID --only firestore
 ```
 
-3. 로컬 Gradle 속성(예: `~/.gradle/gradle.properties`)에 Android 공개 설정을 넣습니다. 서비스 계정 키는 앱·저장소·채팅에 넣지 않습니다.
+3. Firebase 콘솔에서 받은 `google-services.json`을 `app/`에 넣고 다시 빌드합니다. 또는 로컬 Gradle 속성(예: `~/.gradle/gradle.properties`)에 Android 공개 설정을 넣습니다. 서비스 계정 키는 앱·저장소·채팅에 넣지 않습니다.
 
 ```properties
 firebaseProjectId=YOUR_PROJECT_ID
@@ -118,6 +118,15 @@ useEmulators=false
 
 4. 관리자가 공간과 운영일을 등록하고 운영자 계정에 custom claim을 지정합니다. [Spark 운영·전환 안내](docs/SPARK.md)를 따릅니다.
 
-실제 프로젝트 ID·설정이 제공되지 않아 라이브 배포는 하지 않았습니다. `google-services.json` 자동 처리 대신 `FirebaseOptions`를 사용합니다. 기존 Functions 버전의 데이터는 자동 변환하지 않습니다. 원본을 삭제하지 않고 새 `spark*` 컬렉션을 사용합니다.
+실제 프로젝트 ID·설정이 제공되지 않아 라이브 배포는 하지 않았습니다. `app/google-services.json`에서 현재 Android 패키지에 맞는 설정을 읽어 `FirebaseOptions`에 적용합니다. 파일은 Git에서 제외됩니다. 기존 Functions 버전의 데이터는 자동 변환하지 않습니다. 원본을 삭제하지 않고 새 `spark*` 컬렉션을 사용합니다.
 
 [Firebase 계약·보안 설계](docs/FIREBASE.md) · [Spark 한도·관리 절차](docs/SPARK.md) · [검증 기록](docs/VALIDATION.md)
+
+### 실제 Firebase 회원가입 연결
+
+1. Firebase 콘솔에서 Android 앱을 패키지명 `com.portfolio.littlespace`로 등록합니다.
+2. 내려받은 `google-services.json`을 `app/google-services.json`에 넣습니다. 설정 파일이 있으면 실제 서버를 자동 선택합니다. 위 Gradle 속성은 파일보다 우선하므로 예전 `useEmulators=true` 설정은 제거합니다.
+3. Authentication → Sign-in method에서 이메일/비밀번호를 활성화하고 Firestore 데이터베이스를 생성합니다. 저장소의 보안 규칙·인덱스를 해당 프로젝트에 배포합니다.
+4. 앱을 다시 빌드해 설치합니다. 이미 설치한 데모 APK에는 새 설정이 적용되지 않습니다.
+
+설정이 없으면 기존 개발용 에뮬레이터 모드입니다. Android 에뮬레이터는 `10.0.2.2`, USB 실기기는 `adb reverse tcp:9099 tcp:9099`와 `adb reverse tcp:8080 tcp:8080` 후 `-PemulatorHost=127.0.0.1`로 빌드합니다. 로컬 Firebase 서버도 실행해야 합니다.
