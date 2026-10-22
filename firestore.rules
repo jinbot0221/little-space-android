@@ -167,7 +167,7 @@ service cloud.firestore {
     }
     match /users/{uid} {
       allow read: if self(uid);
-      allow create: if self(uid) && request.resource.data.keys().hasOnly(['nickname','termsAccepted','termsVersion','privacyVersion']) && request.resource.data.nickname is string && request.resource.data.nickname.size() >= 2 && request.resource.data.nickname.size() <= 20 && request.resource.data.termsAccepted == true && request.resource.data.termsVersion == '1.0' && request.resource.data.privacyVersion == '1.0';
+      allow create: if self(uid) && request.resource.data.keys().hasOnly(['nickname','termsAccepted','termsVersion','privacyVersion','accountType']) && request.resource.data.get('accountType','customer') in ['customer','host'] && request.resource.data.nickname is string && request.resource.data.nickname.size() >= 2 && request.resource.data.nickname.size() <= 20 && request.resource.data.termsAccepted == true && request.resource.data.termsVersion == '1.0' && request.resource.data.privacyVersion == '1.0';
       allow update: if self(uid) && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname']) && request.resource.data.nickname is string && request.resource.data.nickname.size() >= 2 && request.resource.data.nickname.size() <= 20;
       match /clock/{id} { allow read: if self(uid); allow create,update: if self(uid) && id == 'current' && request.resource.data.keys().hasOnly(['at']) && request.resource.data.at == request.time; }
       match /favorites/{spaceId} { allow read,delete: if self(uid); allow create,update: if self(uid) && request.resource.data.keys().hasOnly(['spaceId']) && request.resource.data.spaceId == spaceId; }

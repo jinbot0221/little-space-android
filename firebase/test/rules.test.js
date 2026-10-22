@@ -565,3 +565,32 @@ test("customer cannot extend a hold by resetting its server creation time", asyn
     }),
   );
 });
+
+test("signup accepts customer and host intent without granting host privileges", async () => {
+  for (const accountType of ["customer", "host"]) {
+    const client = db(`new-${accountType}`);
+    const profile = {
+      nickname: "신규회원", termsAccepted: true, termsVersion: "1.0",
+      privacyVersion: "1.0", accountType,
+    };
+    await assertSucceeds(setDoc(ref(client, `users/new-${accountType}`), profile));
+    a.equal((await read(client, `users/new-${accountType}`)).accountType, accountType);
+    await assertFails(updateDoc(ref(client, `users/new-${accountType}`), { accountType: accountType === "host" ? "customer" : "host" }));
+    await assertFails(updateDoc(ref(client, `users/new-${accountType}`), { host: true }));
+    await assertFails(getDoc(ref(client, "users/u")));
+  }
+  const applicant = db("host-applicant");
+  await assertSucceeds(setDoc(ref(applicant, "users/host-applicant"), {
+    nickname: "제공신청", termsAccepted: true, termsVersion: "1.0",
+    privacyVersion: "1.0", accountType: "host",
+  }));
+  // Matching owner ID still cannot replace the trusted Auth custom claim.
+  await admin(async client => {
+    await updateDoc(ref(client, "spaces/room"), { hostId: "host-applicant" });
+  });
+  await assertFails(block(applicant));
+  const invalid = db("invalid-type");
+  await assertFails(setDoc(ref(invalid, "users/invalid-type"), {
+    nickname: "운영관리", termsAccepted: true, termsVersion: "1.0", privacyVersion: "1.0", accountType: "admin",
+  }));
+});

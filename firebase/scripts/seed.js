@@ -31,6 +31,7 @@ initializeApp({ projectId: "demo-teumgot" });
       .doc(`users/${uid}`)
       .set({
         nickname: host ? "테스트 운영자" : "테스트 고객",
+        accountType: host ? "host" : "customer",
         termsAccepted: true,
         termsVersion: "1.0",
         privacyVersion: "1.0",

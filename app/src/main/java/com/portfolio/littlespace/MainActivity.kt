@@ -60,11 +60,11 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TeumgotApp(vm: AppViewModel = viewModel()) {
-    val tabs = listOf("탐색", "찜", "예약내역", "마이")
+    val tabs = if (vm.provider) listOf("운영 홈", "내 공간", "운영 예약", "마이") else listOf("탐색", "찜", "예약내역", "마이")
     val icons =
         listOf(
-            Icons.Outlined.Explore,
-            Icons.Outlined.FavoriteBorder,
+            if (vm.provider) Icons.Outlined.Dashboard else Icons.Outlined.Explore,
+            if (vm.provider) Icons.Outlined.Business else Icons.Outlined.FavoriteBorder,
             Icons.Outlined.CalendarMonth,
             Icons.Outlined.PersonOutline,
         )
@@ -135,7 +135,10 @@ fun TeumgotApp(vm: AppViewModel = viewModel()) {
                     if (vm.email == null) Guest(vm, "마음에 드는 공간을 모아보세요")
                     else SpaceList(vm, vm.spaces.filter { it.id in vm.favorites }, "아직 찜한 공간이 없어요")
                 "예약내역",
-                "운영 예약" -> if (vm.email == null) Guest(vm, "나의 예약을 한눈에 확인해요") else Bookings(vm)
+                "운영 예약" -> if (vm.email == null) Guest(vm, "나의 예약을 한눈에 확인해요")
+                    else if (vm.route == "운영 예약" && !vm.host) ProviderHome(vm) else Bookings(vm)
+                "운영 홈" -> ProviderHome(vm)
+                "내 공간" -> ProviderSpaces(vm)
                 "마이" -> MyPage(vm)
                 "로그인",
                 "회원가입",
@@ -644,7 +647,7 @@ fun BookingDetail(vm: AppViewModel) {
             Text("정확히 24시간 전까지 취소할 수 있으며 서버 시각으로 최종 판정합니다.")
             Primary("취소 확정", !vm.loading) { vm.cancel() }
         } else {
-            if (b.str("status") == "confirmed") {
+            if (!vm.provider && b.str("status") == "confirmed") {
                 Text("이용 안내", fontWeight = FontWeight.Bold)
                 Text("가상 공간의 테스트 예약입니다. 실제 출입이나 이용은 제공되지 않습니다.")
                 if (b["canCancel"] == true)
@@ -657,8 +660,8 @@ fun BookingDetail(vm: AppViewModel) {
                     }
                 else Text("이용 24시간 이내에는 직접 취소할 수 없어요.", color = Muted)
             }
-            if (b.str("status") == "completed") Primary("후기 작성") { vm.go("후기 작성") }
-            Primary("예약내역 보기", !vm.loading) { vm.tab("예약내역") }
+            if (!vm.provider && b.str("status") == "completed") Primary("후기 작성") { vm.go("후기 작성") }
+            Primary("예약내역 보기", !vm.loading) { vm.tab(if (vm.provider) "운영 예약" else "예약내역") }
         }
     }
 }
@@ -691,7 +694,11 @@ fun Bookings(vm: AppViewModel) {
             }
         }
         val list = vm.bookings.filter { it.str("status") == filter }
-        if (list.isEmpty()) item { Empty("예약내역이 없어요", "원하는 공간과 시간을 찾아보세요.") { vm.tab("탐색") } }
+        if (list.isEmpty()) item {
+            Empty("예약내역이 없어요", if (vm.provider) "등록한 공간의 예약이 여기에 표시돼요." else "원하는 공간과 시간을 찾아보세요.") {
+                vm.tab(if (vm.provider) "내 공간" else "탐색")
+            }
+        }
         items(list, key = { it.str("id") }) { b ->
             Card(
                 onClick = {
@@ -727,6 +734,50 @@ fun Guest(vm: AppViewModel, title: String) {
 }
 
 @Composable
+fun ProviderHome(vm: AppViewModel) {
+    Column(Modifier.padding(20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        Title("${vm.name ?: "제공자"}님의 운영 홈", "내 공간과 고객 예약을 관리해요")
+        if (!vm.host) {
+            Text("장소 제공자 승인 대기", fontWeight = FontWeight.Bold, color = Purple)
+            Text("장소 제공자로 가입했어요. 관리자가 계정과 공간을 확인한 뒤 운영 권한을 승인해 드려요.")
+            Text("등록 이메일: ${vm.email ?: ""}", color = Muted)
+            Primary("승인 상태 새로고침", !vm.loading) { vm.refreshMemberType() }
+        } else {
+            Text("관리 중인 공간 ${vm.ownedSpaces().size}곳", style = MaterialTheme.typography.headlineSmall)
+            Primary("고객 예약 관리", !vm.loading) { vm.hostBookings() }
+            OutlinedButton(onClick = { vm.tab("내 공간") }, modifier = Modifier.fillMaxWidth()) { Text("내 공간 · 운영 시간 관리") }
+            Text("예약 취소와 후기는 예약한 이용자가 진행해요.", color = Muted)
+        }
+    }
+}
+
+@Composable
+fun ProviderSpaces(vm: AppViewModel) {
+    if (!vm.host) {
+        ProviderHome(vm)
+        return
+    }
+    LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        item { Title("내 공간", "공간별 운영 시간을 설정해요") }
+        if (vm.ownedSpaces().isEmpty()) item {
+            Text("아직 연결된 공간이 없어요. 관리자에게 가입 이메일과 공간 정보를 전달해 등록을 요청해 주세요.")
+        }
+        items(vm.ownedSpaces(), key = { it.id }) { space ->
+            Card(colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(space.name, style = MaterialTheme.typography.titleLarge)
+                    Text(space.address, color = Muted)
+                    Primary("운영 시간 설정", !vm.loading) {
+                        vm.selected = space
+                        vm.go("운영 시간 차단")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun MyPage(vm: AppViewModel) {
     if (vm.email == null) {
         Guest(vm, "반가워요, 틈곳입니다")
@@ -734,8 +785,9 @@ fun MyPage(vm: AppViewModel) {
     }
     Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Title("${vm.name?:"회원"}님, 반가워요", vm.email)
-        OutlinedButton(onClick = { vm.tab("예약내역") }, modifier = Modifier.fillMaxWidth()) {
-            Text("내 예약내역")
+        Text(if (vm.provider) "장소 제공자 · ${if (vm.host) "승인 완료" else "승인 대기"}" else "일반 이용자", color = Purple)
+        OutlinedButton(onClick = { vm.tab(if (vm.provider) "운영 예약" else "예약내역") }, modifier = Modifier.fillMaxWidth()) {
+            Text(if (vm.provider) "공간 운영 예약" else "내 예약내역")
         }
         OutlinedButton(onClick = { vm.loadNotifications() }, modifier = Modifier.fillMaxWidth()) {
             Text("알림함")
@@ -775,6 +827,7 @@ fun AuthScreen(vm: AppViewModel) {
     var nickname by rememberSaveable { mutableStateOf("") }
     var terms by rememberSaveable { mutableStateOf(false) }
     var privacy by rememberSaveable { mutableStateOf(false) }
+    var memberType by rememberSaveable { mutableStateOf("customer") }
     val emailValid = android.util.Patterns.EMAIL_ADDRESS.matcher(mail.trim()).matches()
     val valid =
         if (complete) nickname.trim().length in 2..20 && terms && privacy
@@ -793,6 +846,16 @@ fun AuthScreen(vm: AppViewModel) {
             else if (reset) "비밀번호를 잊으셨나요?" else "나만의 공간을 만나세요",
             "이메일 계정으로 간편하게 시작해요.",
         )
+        if (signup || complete) {
+            Text("어떤 회원으로 이용하시나요?", fontWeight = FontWeight.Bold)
+            listOf("customer" to "일반 이용자", "host" to "장소 제공자").forEach { (value, label) ->
+                OutlinedButton(onClick = { memberType = value }, enabled = !vm.loading, modifier = Modifier.fillMaxWidth()) {
+                    RadioButton(selected = memberType == value, onClick = null)
+                    Text(label, modifier = Modifier.padding(start = 8.dp))
+                }
+            }
+            Text(if (memberType == "host") "내 공간과 예약을 관리해요. 가입 후 관리자 승인이 완료되면 운영을 시작할 수 있어요." else "공간을 탐색하고 찜하거나 예약할 수 있어요.", color = Muted)
+        }
         if (signup || complete)
             OutlinedTextField(
                 nickname,
@@ -850,8 +913,8 @@ fun AuthScreen(vm: AppViewModel) {
             valid && !vm.loading,
         ) {
             when {
-                complete -> vm.complete(nickname.trim())
-                signup -> vm.signup(mail, password, nickname)
+                complete -> vm.complete(nickname.trim(), memberType)
+                signup -> vm.signup(mail, password, nickname, memberType)
                 reset -> vm.reset(mail)
                 else -> vm.login(mail, password)
             }

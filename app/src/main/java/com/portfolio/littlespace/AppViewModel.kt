@@ -47,6 +47,9 @@ constructor(app: Application, private val screenshotSpaces: List<Space>? = null)
     var message by mutableStateOf<String?>(null)
     var email by mutableStateOf(repo.auth.currentUser?.email)
     var name by mutableStateOf(repo.auth.currentUser?.displayName)
+    var accountType by mutableStateOf("customer")
+        private set
+    val provider: Boolean get() = accountType == "host" || host
     var host by mutableStateOf(false)
     var loginPrompt by mutableStateOf(false)
     var region by mutableStateOf("진주")
@@ -170,6 +173,10 @@ constructor(app: Application, private val screenshotSpaces: List<Space>? = null)
         backStack.clear()
         route = next
         if (email != null) {
+            if (next == "운영 예약") {
+                bookings = emptyList()
+                if (host) run { bookings = maps(repo.call("getHostBookings")["bookings"]) }
+            }
             if (next == "예약내역") loadBookings()
             if (next == "찜") refreshFavorites()
         }
@@ -180,11 +187,12 @@ constructor(app: Application, private val screenshotSpaces: List<Space>? = null)
     }
 
     fun refresh() = run {
-        spaces = screenshotSpaces ?: repo.spaces()
         if (email != null) {
-            favorites = repo.favorites()
-            host = repo.auth.currentUser?.getIdToken(false)?.awaitTokenHost() ?: false
+            loadMemberType()
+            if (provider && route == "탐색") route = "운영 홈"
         }
+        spaces = screenshotSpaces ?: repo.spaces(owned = provider)
+        if (email != null && !provider) favorites = repo.favorites()
     }
 
     fun openSpace(space: Space) {
@@ -212,7 +220,23 @@ constructor(app: Application, private val screenshotSpaces: List<Space>? = null)
         }
     }
 
+    private suspend fun loadMemberType() {
+        host = repo.auth.currentUser?.getIdToken(true)?.awaitTokenHost() ?: false
+        accountType = repo.accountType()
+    }
+
+    fun refreshMemberType() = run {
+        loadMemberType()
+        spaces = repo.spaces(owned = provider)
+        message = if (host) "장소 제공자 승인이 완료됐어요." else "아직 운영 권한 승인 대기 중이에요."
+    }
+
     private fun finishAuth() {
+        if (provider) {
+            backStack.clear()
+            route = "운영 홈"
+            return
+        }
         while (backStack.lastOrNull() in listOf("로그인", "회원가입", "비밀번호 찾기", "가입 완료")) backStack
             .removeAt(backStack.lastIndex)
         route = if (backStack.isNotEmpty()) backStack.removeAt(backStack.lastIndex) else "탐색"
@@ -222,22 +246,24 @@ constructor(app: Application, private val screenshotSpaces: List<Space>? = null)
         repo.login(mail.trim(), password)
         email = repo.auth.currentUser?.email
         name = repo.auth.currentUser?.displayName
+        loadMemberType()
         if (repo.hasProfile()) finishAuth() else route = "가입 완료"
-        favorites = repo.favorites()
-        host = repo.auth.currentUser?.getIdToken(false)?.awaitTokenHost() ?: false
+        if (provider) spaces = repo.spaces(owned = true) else favorites = repo.favorites()
         hasRecovery = repo.pending() != null
     }
 
-    fun signup(mail: String, password: String, nickname: String) = run {
-        repo.signup(mail.trim(), password, nickname.trim())
+    fun signup(mail: String, password: String, nickname: String, type: String = "customer") = run {
+        repo.signup(mail.trim(), password, nickname.trim(), type)
         email = repo.auth.currentUser?.email
         name = nickname
+        loadMemberType()
         finishAuth()
     }
 
-    fun complete(nickname: String) = run {
-        repo.completeProfile(nickname)
+    fun complete(nickname: String, type: String = "customer") = run {
+        repo.completeProfile(nickname, type)
         name = nickname
+        loadMemberType()
         finishAuth()
     }
 
@@ -255,13 +281,16 @@ constructor(app: Application, private val screenshotSpaces: List<Space>? = null)
         email = null
         name = null
         host = false
+        accountType = "customer"
         favorites = emptySet()
         bookings = emptyList()
         notices = emptyList()
         hold = null
         booking = null
         hasRecovery = false
+        spaces = emptyList()
         tab("탐색")
+        refresh()
     }
 
     fun selectTimes() {
@@ -409,15 +438,14 @@ constructor(app: Application, private val screenshotSpaces: List<Space>? = null)
 
     fun openNotice(n: Map<String, Any>) = run {
         repo.markRead(n.str("id"))
-        val r = repo.call("getBookings")
+        val r = repo.call(if (provider) "getHostBookings" else "getBookings")
         bookings = maps(r["bookings"])
         booking = bookings.find { it.str("id") == n.str("bookingId") }
         if (booking != null) go("예약 상세") else message = "예약내역에서 최신 상태를 확인해 주세요."
     }
 
     fun hostBookings() {
-        go("운영 예약")
-        run { bookings = maps(repo.call("getHostBookings")["bookings"]) }
+        tab("운영 예약")
     }
 
     fun ownedSpaces() = spaces.filter { it.hostId == repo.auth.currentUser?.uid }

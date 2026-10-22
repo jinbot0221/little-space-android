@@ -62,6 +62,9 @@ fun Map<String, Any>.long(k: String) = (get(k) as? Number)?.toLong() ?: 0L
 fun Map<String, Any>.str(k: String) = get(k) as? String ?: ""
 
 class FirebaseRepository(context: Context) {
+    companion object {
+        private val emulatorApps = mutableSetOf<FirebaseApp>()
+    }
     private val app =
         FirebaseApp.getApps(context).firstOrNull()
             ?: FirebaseApp.initializeApp(
@@ -79,9 +82,12 @@ class FirebaseRepository(context: Context) {
         context.getSharedPreferences("transaction_recovery_spark_v2", Context.MODE_PRIVATE)
 
     init {
-        if (BuildConfig.USE_EMULATORS) {
-            auth.useEmulator(BuildConfig.EMULATOR_HOST, 9099)
-            db.useEmulator(BuildConfig.EMULATOR_HOST, 8080)
+        synchronized(emulatorApps) {
+            if (BuildConfig.USE_EMULATORS && app !in emulatorApps) {
+                auth.useEmulator(BuildConfig.EMULATOR_HOST, 9099)
+                db.useEmulator(BuildConfig.EMULATOR_HOST, 8080)
+                emulatorApps.add(app)
+            }
         }
     }
 
@@ -101,31 +107,31 @@ class FirebaseRepository(context: Context) {
             }
         }
 
-    suspend fun spaces() =
-        db.collection("spaces")
+    suspend fun spaces(owned: Boolean = false): List<Space> {
+        var query: Query = db.collection("spaces")
             .whereEqualTo("active", true)
             .whereEqualTo("schemaVersion", 2)
-            .limit(30)
-            .get()
-            .await()
-            .documents
-            .map { spaceOf(it.data!!, it.id) }
+        if (owned) query = query.whereEqualTo("hostId", checkNotNull(auth.currentUser).uid)
+        return query.limit(30).get().await().documents.map { spaceOf(it.data!!, it.id) }
+    }
 
     suspend fun login(email: String, password: String) {
         auth.signInWithEmailAndPassword(email, password).await()
     }
 
-    suspend fun signup(email: String, password: String, nickname: String) {
+    suspend fun signup(email: String, password: String, nickname: String, accountType: String = "customer") {
         auth.createUserWithEmailAndPassword(email, password).await()
-        completeProfile(nickname)
+        completeProfile(nickname, accountType)
     }
 
-    suspend fun completeProfile(nickname: String) {
+    suspend fun completeProfile(nickname: String, accountType: String = "customer") {
+        require(accountType in listOf("customer", "host"))
         val user = checkNotNull(auth.currentUser)
         db.document("users/${user.uid}")
             .set(
                 mapOf(
                     "nickname" to nickname,
+                    "accountType" to accountType,
                     "termsAccepted" to true,
                     "termsVersion" to "1.0",
                     "privacyVersion" to "1.0",
@@ -136,6 +142,10 @@ class FirebaseRepository(context: Context) {
             .updateProfile(UserProfileChangeRequest.Builder().setDisplayName(nickname).build())
             .await()
     }
+
+    suspend fun accountType(): String = auth.currentUser?.let {
+        db.document("users/${it.uid}").get().await().getString("accountType")
+    } ?: "customer"
 
     suspend fun hasProfile() =
         auth.currentUser?.let {

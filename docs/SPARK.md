@@ -29,7 +29,13 @@ FCM 메시지 수신 자체가 유료라서 뺀 것이 아닙니다. 사용자 �
 node firebase/scripts/prepare-catalog.js --live --project YOUR_PROJECT_ID --host-uid YOUR_HOST_UID --days 30
 ```
 
-기존 공간의 `schemaVersion`이 2가 아니면 자동 변환하지 않고 중단합니다. 실제 상품 정보는 별도 관리 도구/콘솔에서 적합한 v2 스키마로 등록하세요. 운영자 UID는 Auth 계정에 실제로 존재해야 합니다. 운영자에게는 Admin SDK에서 기존 custom claims를 보존해 `host:true`를 추가해야 합니다. 앱 회원가입에서 선택할 수 없습니다.
+기존 공간의 `schemaVersion`이 2가 아니면 자동 변환하지 않고 중단합니다. 실제 상품 정보는 별도 관리 도구/콘솔에서 적합한 v2 스키마로 등록하세요. 운영자 UID는 Auth 계정에 실제로 존재해야 합니다. 운영자에게는 Admin SDK에서 기존 custom claims를 보존해 `host:true`를 추가해야 합니다. 가입 시 선택하는 `accountType:host`는 장소 제공 신청이며 운영 권한을 부여하지 않습니다. 관리자가 확인한 신청자만 아래 도구로 승인합니다.
+
+```bash
+node firebase/scripts/approve-host.js --live --project YOUR_PROJECT_ID --uid HOST_APPLICANT_UID
+```
+
+도구는 활성 Auth 계정·장소 제공자 신청·약관 동의를 확인하고 기존 custom claims를 보존합니다. 앱의 **승인 상태 새로고침**에서 새 토큰을 받아 운영 화면을 활성화합니다. 공간의 `hostId`는 승인한 UID로 별도 등록해야 하며 본인 공간만 운영할 수 있습니다.
 
 시드와 카탈로그 준비는 서로 목적이 다릅니다. 전자는 테스트 계정·데이터를 로컬에 만들고, 후자는 명시한 라이브 프로젝트에 누락된 가상 카탈로그만 등록합니다. 라이브 관리 도구는 이 작업에서 실행하지 않았습니다.
 

@@ -12,7 +12,7 @@ Android → Firebase Auth → Firestore SDK 트랜잭션 → Security Rules 구�
 | `sparkBookings/{holdId}` | 확정·취소 예약, 계약 스냅샷·버전·확정 요청 키 |
 | `sparkOperations/{requestKey}` | 운영 차단·해제 요청의 불변 결과 |
 | `sparkReviews/{bookingId}` | 완료된 본인 예약에 대한 후기 1회 |
-| `users/{uid}` | 본인의 닉네임·약관 동의; role 쓰기 금지 |
+| `users/{uid}` | 본인의 닉네임·약관 동의·가입 유형(`accountType`); 권한 쓰기 금지 |
 | `users/{uid}/clock/current` | 본인만 기록하는 서버 Timestamp 기준 시각 |
 | `users/{uid}/favorites/{spaceId}` | 본인 찜 |
 | `users/{uid}/notifications/{bookingId}_{version}` | 확정·취소와 원자적으로 생성하는 앱 알림함 |
@@ -50,3 +50,13 @@ Android → Firebase Auth → Firestore SDK 트랜잭션 → Security Rules 구�
 자동 Firestore 리스너·주기적 폴링은 없습니다. 공간/예약/알림 목록은 30개, 후기 20개, 찜 50개로 제한합니다. 예약은 최신순으로 조회하고 필요한 composite index를 `firestore.indexes.json`에 포함했습니다. 페이지네이션은 후속 범위입니다. 서버 시각 동기화에도 읽기·쓰기가 발생하고, 보안 규칙의 문서 접근도 읽기 비용에 포함됩니다.
 
 현재 `call(name,data)`는 화면과 Repository의 내부 호출 호환 인터페이스일 뿐 HTTP Callable API가 아닙니다. 앱에 `firebase-functions` SDK나 배포할 Functions 소스가 없습니다.
+
+## 회원 유형별 화면
+
+회원가입과 미완료 가입 화면에서 `customer`(일반 이용자) 또는 `host`(장소 제공자)를 선택합니다. `accountType`은 최초 생성 후 클라이언트가 변경할 수 없습니다. 기존 필드 없는 계정은 일반 이용자로 처리하되 신뢰할 수 있는 `host:true` claim이 있으면 기존 운영자 화면을 유지합니다.
+
+- 일반 이용자: 탐색 / 찜 / 예약내역 / 마이.
+- 장소 제공자: 운영 홈 / 내 공간 / 운영 예약 / 마이. 미승인 계정은 승인 대기 안내만 표시합니다.
+- 운영 권한: `accountType`이 아니라 관리자 발급 Auth claim과 공간 `hostId`를 함께 검사합니다. 제공자 화면에서는 고객 취소·후기 버튼을 제공하지 않습니다.
+
+공간 등록은 현재 관리자 도구·콘솔에서 처리합니다. 앱 내 공간 등록 폼과 승인 심사 관리자 화면은 아직 제공하지 않습니다. 새 앱 사용 전에 변경된 Firestore 보안 규칙을 배포해야 `accountType`을 포함한 가입이 저장됩니다.
